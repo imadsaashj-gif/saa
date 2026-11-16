@@ -42,9 +42,21 @@ export interface BrandingSettings {
   orgTitleAr: string;
   orgTitleEn: string;
   logoDataUrl?: string;
+  loginLogoDataUrl?: string;
   loginImageDataUrl?: string;
+  loginCardOpacity?: number;
+  loginSystemCode?: string;
+  loginVersionBadge?: string;
+  loginShowcaseTitleAr?: string;
+  loginShowcaseTitleEn?: string;
   loginHeadlineAr?: string;
   loginHeadlineEn?: string;
+  loginShowcaseTagsAr?: string;
+  loginShowcaseTagsEn?: string;
+  loginRestrictedNoticeAr?: string;
+  loginRestrictedNoticeEn?: string;
+  loginForgotHelpAr?: string;
+  loginForgotHelpEn?: string;
 }
 
 export interface NotificationSettings {
@@ -159,6 +171,10 @@ export interface Employee {
   contractType: string;
   hireDate: string;
   location: string;
+  assignedWorkSiteId?: string;
+  allowedWorkSites?: string[];
+  defaultShiftMode?: ShiftMode;
+  geofenceRadiusOverrideMeters?: number;
   department: string;
   directManager: string;
   status: string;
@@ -336,6 +352,7 @@ export type UserRole = 'SuperAdmin' | 'Admin' | 'Manager' | 'HR' | 'Employee' | 
 
 export interface AppUser {
   id: string;
+  username?: string;
   name: string;
   email: string;
   password?: string;
@@ -454,6 +471,10 @@ export const ARABIC_HEADERS_MAP: Record<string, string> = {
   'Biometric Exempt': 'biometricExempt',
   'سبب الإعفاء من البصمة': 'biometricExemptReason',
   'Biometric Exempt Reason': 'biometricExemptReason',
+  'نظام الدوام الافتراضي': 'defaultShiftMode',
+  'Default Shift Mode': 'defaultShiftMode',
+  'نطاق السياج المخصص': 'geofenceRadiusOverrideMeters',
+  'Geofence Radius Override': 'geofenceRadiusOverrideMeters',
 };
 
 export const REVERSE_HEADERS_MAP: Record<string, string> = {
@@ -479,4 +500,6 @@ export const REVERSE_HEADERS_MAP: Record<string, string> = {
   attachment: 'المرفقات',
   biometricExempt: 'معفى من البصمة',
   biometricExemptReason: 'سبب الإعفاء من البصمة',
+  defaultShiftMode: 'نظام الدوام الافتراضي',
+  geofenceRadiusOverrideMeters: 'نطاق السياج المخصص',
 };

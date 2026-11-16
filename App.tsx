@@ -1,19 +1,53 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   BarChart3,
+  Bell,
+  Briefcase,
   Building2,
   Calendar,
+  CalendarCheck2,
+  CalendarDays,
+  CalendarRange,
+  Check,
   ChevronDown,
   ClipboardList,
   Clock,
+  Database,
+  DoorOpen,
+  FilePlus2,
+  FileSpreadsheet,
+  Globe,
+  Hash,
   History,
+  KeyRound,
   LayoutDashboard,
   LogOut,
+  MapPin,
   Menu,
   Moon,
+  Network,
+  Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Phone,
+  Save,
+  Scale,
   Settings,
+  Shield,
+  ShieldCheck,
+  SlidersHorizontal,
   Sun,
+  Upload,
+  UserCheck,
+  UserCircle,
+  Users,
+  UserX,
   X,
   Zap,
 } from 'lucide-react';
@@ -45,6 +79,7 @@ import {
   ExitPermission,
   Language,
   NotificationSettings,
+  PERMISSIONS_LIST,
   SubstituteExceptionRequest,
   SystemSettings,
   ThemeOption,
@@ -55,7 +90,6 @@ import { t, translateRole } from './i18n';
 import {
   DEFAULT_ATTENDANCE_SETTINGS,
   DEFAULT_BRANDING,
-  DEFAULT_EMPLOYEE_USER,
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_ORG_UNITS,
   DEFAULT_SETTINGS,
@@ -83,7 +117,8 @@ type View =
   | 'archive'
   | 'settings'
   | 'audit'
-  | 'ai';
+  | 'ai'
+  | 'profile';
 
 const STORAGE_KEYS = {
   employees: 'arch_hr_employees_v2',
@@ -101,8 +136,10 @@ const STORAGE_KEYS = {
   usersPhase2Migrated: 'arch_hr_users_phase2_migrated_v1',
   usersPhase3Migrated: 'arch_hr_users_phase3_migrated_v1',
   usersPhase4Migrated: 'arch_hr_users_phase4_migrated_v1',
+  usersSuperAdminOnlyMigrated: 'arch_hr_users_superadmin_only_v1',
   audit: 'arch_hr_audit_v2',
   currentUserId: 'arch_hr_current_user_v2',
+  sidebarCollapsed: 'arch_hr_sidebar_collapsed_v1',
 };
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -116,6 +153,14 @@ function loadStored<T>(key: string, fallback: T): T {
 }
 
 function hydrateUsers(rawUsers: AppUser[], extraPermIds: string[] = []): AppUser[] {
+  const needsSuperAdminOnlyReset = (() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.usersSuperAdminOnlyMigrated) !== '1';
+    } catch {
+      return false;
+    }
+  })();
+
   const needsPhase2Backfill = (() => {
     try {
       return localStorage.getItem(STORAGE_KEYS.usersPhase2Migrated) !== '1';
@@ -139,6 +184,30 @@ function hydrateUsers(rawUsers: AppUser[], extraPermIds: string[] = []): AppUser
       return false;
     }
   })();
+
+  if (needsSuperAdminOnlyReset) {
+    const existingSuper = rawUsers.find((u) => u.role === 'SuperAdmin' || u.id === SUPER_ADMIN_USER.id);
+    const normalizedSuper: AppUser = {
+      ...(existingSuper || SUPER_ADMIN_USER),
+      id: existingSuper?.id || SUPER_ADMIN_USER.id,
+      username: 'admin',
+      password: 'admin',
+      email: 'admin@archaeology.gov',
+      role: 'SuperAdmin',
+      status: 'Active',
+      linkedEmployeeId: existingSuper?.linkedEmployeeId || 'emp-1',
+      permissions: Array.from(new Set([...ALL_PERMISSION_IDS, ...extraPermIds])),
+    };
+    try {
+      localStorage.setItem(STORAGE_KEYS.usersSuperAdminOnlyMigrated, '1');
+      localStorage.setItem(STORAGE_KEYS.usersPhase2Migrated, '1');
+      localStorage.setItem(STORAGE_KEYS.usersPhase3Migrated, '1');
+      localStorage.setItem(STORAGE_KEYS.usersPhase4Migrated, '1');
+    } catch {
+      // Ignore storage write issue
+    }
+    return [normalizedSuper];
+  }
 
   const migrated = rawUsers.map((u) => {
     if (u.role === 'SuperAdmin') {
@@ -248,10 +317,6 @@ function hydrateUsers(rawUsers: AppUser[], extraPermIds: string[] = []): AppUser
     ? migrated
     : [SUPER_ADMIN_USER, ...migrated];
 
-  const hasEmployeeAccount = withSuper.some((u) => u.role === 'Employee' || u.id === DEFAULT_EMPLOYEE_USER.id);
-  if (!hasEmployeeAccount) {
-    return [...withSuper, DEFAULT_EMPLOYEE_USER];
-  }
   return withSuper;
 }
 
@@ -332,6 +397,10 @@ const App: React.FC = () => {
       branding: {
         ...DEFAULT_BRANDING,
         ...(loaded.branding || {}),
+        loginCardOpacity:
+          loaded.branding?.loginCardOpacity === 78
+            ? 20
+            : loaded.branding?.loginCardOpacity ?? DEFAULT_BRANDING.loginCardOpacity,
       },
       notifications: {
         ...DEFAULT_NOTIFICATION_SETTINGS,
@@ -384,9 +453,36 @@ const App: React.FC = () => {
     settings: false,
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [preselectedEmpForLeave, setPreselectedEmpForLeave] = useState<string | null>(null);
   const [isQuickRequestOpen, setIsQuickRequestOpen] = useState(false);
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [navHistory, setNavHistory] = useState<Array<{ view: View; subTab?: string }>>([]);
+  const [profileName, setProfileName] = useState('');
+  const [profileUsername, setProfileUsername] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [profileAdminId, setProfileAdminId] = useState('');
+  const [profileSerialNo, setProfileSerialNo] = useState('');
+  const [profileJobTitle, setProfileJobTitle] = useState('');
+  const [profileDepartment, setProfileDepartment] = useState('');
+  const [profileDirectManager, setProfileDirectManager] = useState('');
+  const [profileContractType, setProfileContractType] = useState('');
+  const [profileHireDate, setProfileHireDate] = useState('');
+  const [profileLocation, setProfileLocation] = useState('');
+  const [profileAssignedWorkSiteId, setProfileAssignedWorkSiteId] = useState('');
+  const [profileShiftMode, setProfileShiftMode] = useState<'standard' | 'flexible'>('standard');
+  const [profileStatus, setProfileStatus] = useState('على رأس عمله');
+  const [profileNotes, setProfileNotes] = useState('');
+  const [profileAvatar, setProfileAvatar] = useState('');
+  const [profilePassword, setProfilePassword] = useState('');
+  const [profileConfirmPassword, setProfileConfirmPassword] = useState('');
+  const [profileError, setProfileError] = useState('');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const lang: Language = systemSettings.language || 'ar';
@@ -512,6 +608,21 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.currentUserId, currentUserId === null ? 'null' : currentUserId);
   }, [currentUserId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, isSidebarCollapsed ? '1' : '0');
+    } catch {
+      // Ignore storage error
+    }
+  }, [isSidebarCollapsed]);
+
+  // Clear stale session ID if user no longer exists after user-list cleanup
+  useEffect(() => {
+    if (currentUserId && !appUsers.some((u) => u.id === currentUserId && u.status === 'Active')) {
+      setCurrentUserId(null);
+    }
+  }, [currentUserId, appUsers]);
 
   // Sync HTML attributes for Dark/Light, RTL/LTR, and customized Org Title
   useEffect(() => {
@@ -793,83 +904,104 @@ const App: React.FC = () => {
 
   const hasPerm = (perms: string[]) => perms.some((p) => currentUser?.permissions.includes(p));
 
-  // Ordered Main Menu + Sub-Menus (exact hierarchical naming):
-  const myRequestChildren: Array<{ id: MyRequestsSubTab; label: string }> = [
-    { id: 'leave', label: t(lang, 'myRequestsSubLeave') },
-    { id: 'exit', label: t(lang, 'myRequestsSubExit') },
-    { id: 'attendance', label: t(lang, 'myRequestsSubAttendance') },
+  // Ordered Main Menu + Sub-Menus with Icons on ALL items & sub-items:
+  const myRequestChildren: Array<{
+    id: MyRequestsSubTab;
+    label: string;
+    icon: React.FC<{ size?: number; className?: string }>;
+  }> = [
+    { id: 'leave', label: t(lang, 'myRequestsSubLeave'), icon: FilePlus2 },
+    { id: 'exit', label: t(lang, 'myRequestsSubExit'), icon: DoorOpen },
+    { id: 'attendance', label: t(lang, 'myRequestsSubAttendance'), icon: Clock },
   ];
 
-  const attendanceChildren: Array<{ id: AttendanceHubSubTab; label: string; perms: string[] }> = [
+  const attendanceChildren: Array<{
+    id: AttendanceHubSubTab;
+    label: string;
+    perms: string[];
+    icon: React.FC<{ size?: number; className?: string }>;
+  }> = [
     {
       id: 'sheet',
       label: t(lang, 'attendanceSubSheet'),
       perms: ['view_attendance_sheet', 'manage_attendance', 'view_attendance'],
+      icon: FileSpreadsheet,
     },
     {
       id: 'violations',
       label: t(lang, 'attendanceSubViolations'),
       perms: ['view_violations', 'manage_violations'],
+      icon: AlertTriangle,
     },
     {
       id: 'absences',
       label: t(lang, 'attendanceSubAbsences'),
       perms: ['view_absences', 'manage_absences'],
+      icon: UserX,
     },
   ];
 
-  const requestChildren: Array<{ id: RequestsSubTab; label: string }> = [
-    { id: 'leaves', label: t(lang, 'subTabLeaves') },
-    { id: 'exit_permits', label: t(lang, 'subTabExitPermissions') },
-    { id: 'calendar', label: t(lang, 'subTabCalendar') },
-    { id: 'substitutes', label: t(lang, 'subTabSubstitutes') },
-    { id: 'exceptions', label: t(lang, 'subTabExceptions') },
-    { id: 'balances', label: t(lang, 'subTabBalances') },
+  const requestChildren: Array<{
+    id: RequestsSubTab;
+    label: string;
+    icon: React.FC<{ size?: number; className?: string }>;
+  }> = [
+    { id: 'leaves', label: t(lang, 'subTabLeaves'), icon: CalendarCheck2 },
+    { id: 'exit_permits', label: t(lang, 'subTabExitPermissions'), icon: DoorOpen },
+    { id: 'calendar', label: t(lang, 'subTabCalendar'), icon: CalendarRange },
+    { id: 'substitutes', label: t(lang, 'subTabSubstitutes'), icon: UserCheck },
+    { id: 'exceptions', label: t(lang, 'subTabExceptions'), icon: ShieldCheck },
+    { id: 'balances', label: t(lang, 'subTabBalances'), icon: Scale },
   ];
 
-  const orgChildren: Array<{ id: OrgSubTab; label: string; perms: string[] }> = [
-    { id: 'departments', label: t(lang, 'orgSubDepts'), perms: ['view_org'] },
-    { id: 'employees', label: t(lang, 'orgSubEmployees'), perms: ['view_employees'] },
+  const orgChildren: Array<{
+    id: OrgSubTab;
+    label: string;
+    perms: string[];
+    icon: React.FC<{ size?: number; className?: string }>;
+  }> = [
+    { id: 'departments', label: t(lang, 'orgSubDepts'), perms: ['view_org'], icon: Network },
+    { id: 'employees', label: t(lang, 'orgSubEmployees'), perms: ['view_employees'], icon: Users },
   ];
 
-  const settingsChildren: Array<{ id: SettingsTab; label: string; perms: string[] }> = [
-    { id: 'branding', label: t(lang, 'settingsTabBranding'), perms: ['manage_settings'] },
-    { id: 'users', label: t(lang, 'settingsTabUsers'), perms: ['manage_users'] },
+  const settingsChildren: Array<{
+    id: SettingsTab;
+    label: string;
+    perms: string[];
+    icon: React.FC<{ size?: number; className?: string }>;
+  }> = [
+    { id: 'branding', label: t(lang, 'settingsTabBranding'), perms: ['manage_settings'], icon: Palette },
+    { id: 'users', label: t(lang, 'settingsTabUsers'), perms: ['manage_users'], icon: Shield },
     {
       id: 'attendance_admin',
       label: t(lang, 'settingsTabAttendanceAdmin'),
       perms: ['manage_settings', 'manage_attendance'],
+      icon: Clock,
     },
-    { id: 'config', label: t(lang, 'settingsTabConfig'), perms: ['manage_settings'] },
-    { id: 'holidays', label: t(lang, 'settingsTabHolidays'), perms: ['manage_settings'] },
-    { id: 'notifications', label: t(lang, 'settingsTabNotifications'), perms: ['manage_settings'] },
-    { id: 'backup', label: t(lang, 'settingsTabBackup'), perms: ['manage_settings'] },
-    { id: 'audit', label: t(lang, 'settingsTabAudit'), perms: ['manage_settings'] },
+    { id: 'config', label: t(lang, 'settingsTabConfig'), perms: ['manage_settings'], icon: SlidersHorizontal },
+    { id: 'holidays', label: t(lang, 'settingsTabHolidays'), perms: ['manage_settings'], icon: CalendarDays },
+    { id: 'notifications', label: t(lang, 'settingsTabNotifications'), perms: ['manage_settings'], icon: Bell },
+    { id: 'backup', label: t(lang, 'settingsTabBackup'), perms: ['manage_settings'], icon: Database },
+    { id: 'audit', label: t(lang, 'settingsTabAudit'), perms: ['manage_settings'], icon: History },
   ];
 
-  const handleNavigate = (
-    target: View | 'attendance' | 'violations' | 'absences',
-    subTab?: string
-  ) => {
-    let view: View;
-    let nextSubTab = subTab;
+  const getCurrentSubTabForView = (view: View): string | undefined => {
+    if (view === 'my_requests') return myRequestsSubTab;
+    if (view === 'attendance_hub') return attendanceSubTab;
+    if (view === 'requests') return requestsSubTab;
+    if (view === 'org') return orgSubTab;
+    if (view === 'settings') return settingsTab;
+    return undefined;
+  };
 
-    if (target === 'attendance') {
-      if (currentUser?.role !== 'Employee' && hasPerm(['view_attendance_sheet', 'manage_attendance'])) {
-        view = 'attendance_hub';
-        nextSubTab = subTab || 'sheet';
-      } else {
-        view = 'my_requests';
-        nextSubTab = 'attendance';
-      }
-    } else if (target === 'violations') {
-      view = 'attendance_hub';
-      nextSubTab = subTab || 'violations';
-    } else if (target === 'absences') {
-      view = 'attendance_hub';
-      nextSubTab = subTab || 'absences';
-    } else {
-      view = target;
+  const applyViewNavigation = (
+    view: View,
+    nextSubTab?: string,
+    recordHistory: boolean = true
+  ) => {
+    const prevSub = getCurrentSubTabForView(currentView);
+    if (recordHistory && (currentView !== view || (nextSubTab && prevSub !== nextSubTab))) {
+      setNavHistory((prev) => [...prev.slice(-19), { view: currentView, subTab: prevSub }]);
     }
 
     setCurrentView(view);
@@ -908,6 +1040,48 @@ const App: React.FC = () => {
       }
     }
     setIsSidebarOpen(false);
+  };
+
+  const handleNavigate = (
+    target: View | 'attendance' | 'violations' | 'absences',
+    subTab?: string,
+    recordHistory: boolean = true
+  ) => {
+    let view: View;
+    let nextSubTab = subTab;
+
+    if (target === 'attendance') {
+      if (currentUser?.role !== 'Employee' && hasPerm(['view_attendance_sheet', 'manage_attendance'])) {
+        view = 'attendance_hub';
+        nextSubTab = subTab || 'sheet';
+      } else {
+        view = 'my_requests';
+        nextSubTab = 'attendance';
+      }
+    } else if (target === 'violations') {
+      view = 'attendance_hub';
+      nextSubTab = subTab || 'violations';
+    } else if (target === 'absences') {
+      view = 'attendance_hub';
+      nextSubTab = subTab || 'absences';
+    } else {
+      view = target;
+    }
+
+    applyViewNavigation(view, nextSubTab, recordHistory);
+  };
+
+  const handleGoBack = () => {
+    if (navHistory.length > 0) {
+      const prevEntry = navHistory[navHistory.length - 1];
+      setNavHistory((prev) => prev.slice(0, -1));
+      applyViewNavigation(prevEntry.view, prevEntry.subTab, false);
+      return;
+    }
+    const defaultView = getDefaultViewForUser(currentUser);
+    if (currentView !== defaultView) {
+      applyViewNavigation(defaultView, undefined, false);
+    }
   };
 
   const resolvedEmployeeIdForQuickRequest = useMemo(() => {
@@ -1005,6 +1179,7 @@ const App: React.FC = () => {
   // Keep currentView restricted to pages permitted for the active user
   useEffect(() => {
     if (!currentUser) return;
+    if (currentView === 'profile') return;
     const item = navOrderItems.find((n) => n.id === currentView);
     if (!item || !item.perms.some((p) => currentUser.permissions.includes(p))) {
       setCurrentView(getDefaultViewForUser(currentUser));
@@ -1014,7 +1189,9 @@ const App: React.FC = () => {
   const allowedNavItems = navOrderItems.filter((item) => hasPerm(item.perms));
 
   const activeParentLabel =
-    navOrderItems.find((n) => n.id === currentView)?.label || t(lang, 'navDashboard');
+    currentView === 'profile'
+      ? t(lang, 'profileTitle')
+      : navOrderItems.find((n) => n.id === currentView)?.label || t(lang, 'navDashboard');
   const activeSubLabel =
     currentView === 'my_requests'
       ? myRequestChildren.find((c) => c.id === myRequestsSubTab)?.label
@@ -1028,6 +1205,234 @@ const App: React.FC = () => {
       : currentView === 'settings'
       ? settingsChildren.find((c) => c.id === settingsTab)?.label
       : undefined;
+
+  const linkedEmployeeForProfile = useMemo(() => {
+    if (!currentUser) return undefined;
+    if (currentUser.linkedEmployeeId) {
+      const byId = employees.find((e) => e.id === currentUser.linkedEmployeeId);
+      if (byId) return byId;
+    }
+    const byEmail = employees.find(
+      (e) => e.email && currentUser.email && e.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()
+    );
+    return byEmail;
+  }, [currentUser, employees]);
+
+  const populateProfileForm = useCallback(() => {
+    if (!currentUser) return;
+    setProfileName(linkedEmployeeForProfile?.fullName || currentUser.name);
+    setProfileUsername(currentUser.username || '');
+    setProfileEmail(currentUser.email || linkedEmployeeForProfile?.email || '');
+    setProfilePhone(linkedEmployeeForProfile?.phone || '');
+    setProfileAdminId(linkedEmployeeForProfile?.adminId || '');
+    setProfileSerialNo(linkedEmployeeForProfile?.serialNo || '');
+    setProfileJobTitle(linkedEmployeeForProfile?.jobTitle || '');
+    setProfileDepartment(linkedEmployeeForProfile?.department || '');
+    setProfileDirectManager(linkedEmployeeForProfile?.directManager || '');
+    setProfileContractType(
+      linkedEmployeeForProfile?.contractType || systemSettings.contractTypes[0]?.name || ''
+    );
+    setProfileHireDate(linkedEmployeeForProfile?.hireDate || '');
+    setProfileLocation(linkedEmployeeForProfile?.location || '');
+    setProfileAssignedWorkSiteId(linkedEmployeeForProfile?.assignedWorkSiteId || '');
+    setProfileShiftMode(linkedEmployeeForProfile?.defaultShiftMode === 'flexible' ? 'flexible' : 'standard');
+    setProfileStatus(linkedEmployeeForProfile?.status || 'على رأس عمله');
+    setProfileNotes(linkedEmployeeForProfile?.notes || '');
+    setProfileAvatar(currentUser.avatar || '');
+    setProfilePassword('');
+    setProfileConfirmPassword('');
+    setProfileError('');
+  }, [currentUser, linkedEmployeeForProfile, systemSettings.contractTypes]);
+
+  useEffect(() => {
+    if (currentView === 'profile') {
+      populateProfileForm();
+    }
+  }, [currentView, populateProfileForm]);
+
+  const openProfileView = () => {
+    if (!currentUser) return;
+    populateProfileForm();
+    applyViewNavigation('profile');
+  };
+
+  const handleProfileAvatarUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const rawUrl = String(reader.result || '');
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 256;
+        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          setProfileAvatar(canvas.toDataURL('image/webp', 0.85));
+        } else {
+          setProfileAvatar(rawUrl);
+        }
+      };
+      img.src = rawUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    const cleanName = profileName.trim();
+    const cleanUsername = profileUsername.trim();
+    const cleanEmail = profileEmail.trim();
+    const cleanPhone = profilePhone.trim();
+    const cleanAdminId = profileAdminId.trim();
+    const cleanSerialNo = profileSerialNo.trim();
+    const cleanJobTitle = profileJobTitle.trim();
+    const cleanDepartment = profileDepartment.trim();
+    const cleanDirectManager = profileDirectManager.trim();
+    const cleanContractType = profileContractType.trim();
+    const cleanHireDate = profileHireDate.trim();
+    const cleanLocation = profileLocation.trim();
+    const cleanNotes = profileNotes.trim();
+    const cleanStatus = profileStatus.trim() || 'على رأس عمله';
+
+    if (!cleanName || !cleanEmail) {
+      setProfileError(
+        lang === 'ar' ? 'الاسم الكامل والبريد الإلكتروني مطلوبان.' : 'Full name and email are required.'
+      );
+      return;
+    }
+    if (cleanUsername) {
+      const dupUsername = appUsers.find(
+        (u) =>
+          u.id !== currentUser.id &&
+          u.username &&
+          u.username.trim().toLowerCase() === cleanUsername.toLowerCase()
+      );
+      if (dupUsername) {
+        setProfileError(lang === 'ar' ? 'اسم المستخدم مسجل لحساب آخر.' : 'Username is already taken.');
+        return;
+      }
+    }
+    const dupEmail = appUsers.find(
+      (u) => u.id !== currentUser.id && u.email.trim().toLowerCase() === cleanEmail.toLowerCase()
+    );
+    if (dupEmail) {
+      setProfileError(lang === 'ar' ? 'البريد الإلكتروني مسجل لحساب آخر.' : 'Email is already taken.');
+      return;
+    }
+    if (cleanAdminId) {
+      const dupAdminId = employees.find(
+        (emp) =>
+          emp.id !== linkedEmployeeForProfile?.id &&
+          emp.adminId &&
+          emp.adminId.trim().toLowerCase() === cleanAdminId.toLowerCase()
+      );
+      if (dupAdminId) {
+        setProfileError(
+          lang === 'ar' ? 'الرقم الإداري مسجل لموظف آخر.' : 'Administrative ID is already assigned to another employee.'
+        );
+        return;
+      }
+    }
+    if (profilePassword) {
+      if (profilePassword.length < 4) {
+        setProfileError(
+          lang === 'ar' ? 'كلمة المرور يجب أن تكون ٤ أحرف على الأقل.' : 'Password must be at least 4 characters.'
+        );
+        return;
+      }
+      if (profilePassword !== profileConfirmPassword) {
+        setProfileError(lang === 'ar' ? 'كلمتا المرور غير متطابقتين.' : 'Passwords do not match.');
+        return;
+      }
+    }
+
+    let resolvedLinkedEmployeeId = linkedEmployeeForProfile?.id || currentUser.linkedEmployeeId;
+
+    if (linkedEmployeeForProfile) {
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp.id === linkedEmployeeForProfile.id
+            ? {
+                ...emp,
+                fullName: cleanName,
+                adminId: cleanAdminId || emp.adminId,
+                serialNo: cleanSerialNo || undefined,
+                phone: cleanPhone || undefined,
+                email: cleanEmail,
+                jobTitle: cleanJobTitle || emp.jobTitle,
+                department: cleanDepartment || emp.department,
+                directManager: cleanDirectManager || emp.directManager,
+                contractType: cleanContractType || emp.contractType,
+                hireDate: cleanHireDate || emp.hireDate,
+                location: cleanLocation || emp.location,
+                assignedWorkSiteId: profileAssignedWorkSiteId || undefined,
+                defaultShiftMode: profileShiftMode,
+                status: cleanStatus,
+                notes: cleanNotes || undefined,
+              }
+            : emp
+        )
+      );
+    } else if (
+      cleanAdminId ||
+      cleanPhone ||
+      cleanJobTitle ||
+      cleanDepartment ||
+      cleanDirectManager ||
+      cleanLocation
+    ) {
+      const newEmpId = generateId();
+      resolvedLinkedEmployeeId = newEmpId;
+      const newEmpRecord: Employee = {
+        id: newEmpId,
+        serialNo: cleanSerialNo || String(employees.length + 1),
+        fullName: cleanName,
+        adminId: cleanAdminId || `USR-${currentUser.id}`,
+        jobTitle: cleanJobTitle || translateRole(currentUser.role, lang),
+        contractType: cleanContractType || systemSettings.contractTypes[0]?.name || 'عقد محلي',
+        hireDate: cleanHireDate || new Date().toISOString().slice(0, 10),
+        location: cleanLocation || systemSettings.attendanceConfig?.approvedWorkSites?.[0] || '',
+        assignedWorkSiteId: profileAssignedWorkSiteId || undefined,
+        defaultShiftMode: profileShiftMode,
+        department: cleanDepartment || orgUnits[0]?.name || '',
+        directManager: cleanDirectManager || '',
+        status: cleanStatus,
+        phone: cleanPhone || undefined,
+        email: cleanEmail,
+        notes: cleanNotes || undefined,
+      };
+      setEmployees((prev) => [newEmpRecord, ...prev]);
+    }
+
+    setAppUsers((prev) =>
+      prev.map((u) =>
+        u.id === currentUser.id
+          ? {
+              ...u,
+              name: cleanName,
+              username: cleanUsername || u.username,
+              email: cleanEmail,
+              avatar: profileAvatar.trim() || undefined,
+              password: profilePassword ? profilePassword : u.password,
+              linkedEmployeeId: resolvedLinkedEmployeeId || u.linkedEmployeeId,
+            }
+          : u
+      )
+    );
+    logAudit(
+      lang === 'ar' ? 'تحديث الملف الشخصي' : 'Updated User Profile',
+      `${cleanName}${cleanAdminId ? ` (${cleanAdminId})` : ''}${cleanUsername ? ` · @${cleanUsername}` : ''}`,
+      'user'
+    );
+    showToast('success', lang === 'ar' ? 'تم حفظ جميع بيانات الملف الشخصي بنجاح.' : 'All profile data saved successfully.');
+    setProfilePassword('');
+    setProfileConfirmPassword('');
+    setProfileError('');
+  };
 
   // (resolvedEmployeeIdForQuickRequest defined above navOrderItems)
 
@@ -1066,9 +1471,11 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar (Supports Full Expanded & Collapsed Icon-Only Rail) */}
       <aside
-        className={`no-print fixed inset-y-0 start-0 z-50 w-64 bg-[var(--sidebar-bg)] border-e border-[var(--border)] transform transition-transform duration-200 flex flex-col md:relative md:translate-x-0 ${
+        className={`no-print fixed inset-y-0 start-0 z-50 bg-[var(--sidebar-bg)] border-e border-[var(--border)] transform transition-all duration-200 flex flex-col md:relative md:translate-x-0 ${
+          isSidebarCollapsed ? 'w-64 md:w-20' : 'w-64'
+        } ${
           isSidebarOpen
             ? 'translate-x-0'
             : lang === 'ar'
@@ -1076,32 +1483,53 @@ const App: React.FC = () => {
             : '-translate-x-full md:translate-x-0'
         }`}
       >
-        {/* Dynamic Brand Header */}
-        <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+        {/* Dynamic Brand Header + Collapse Control */}
+        <div
+          className={`px-3.5 py-4 border-b border-[var(--border)] flex items-center gap-2 ${
+            isSidebarCollapsed ? 'md:flex-col md:justify-center' : 'justify-between'
+          }`}
+        >
+          <div className={`flex items-center gap-3 min-w-0 ${isSidebarCollapsed ? 'md:justify-center' : ''}`}>
             <img
               src={brandingLogo}
               alt={brandingOrgName}
               className="w-10 h-10 rounded-lg object-cover border border-[var(--border)] shrink-0"
             />
-            <div className="min-w-0">
+            <div className={`min-w-0 ${isSidebarCollapsed ? 'md:hidden' : ''}`}>
               <h1 className="font-display font-bold text-sm text-[var(--text-main)] truncate">
                 {brandingOrgName}
               </h1>
               <p className="text-[11px] text-[var(--text-muted)] truncate">{brandingOrgTitle}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsSidebarOpen(false)}
-            className="md:hidden p-1 text-[var(--text-muted)] hover:text-[var(--text-main)]"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              title={isSidebarCollapsed ? t(lang, 'expandSidebarLabel') : t(lang, 'collapseSidebarLabel')}
+              aria-label={isSidebarCollapsed ? t(lang, 'expandSidebarLabel') : t(lang, 'collapseSidebarLabel')}
+              className="hidden md:inline-flex items-center justify-center p-1.5 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-muted)] hover:text-[var(--primary-text)] hover:border-[var(--primary)] transition-colors cursor-pointer"
+            >
+              {lang === 'ar' ? (
+                isSidebarCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />
+              ) : isSidebarCollapsed ? (
+                <PanelLeftOpen size={16} />
+              ) : (
+                <PanelLeftClose size={16} />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(false)}
+              className="md:hidden p-1 text-[var(--text-muted)] hover:text-[var(--text-main)]"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
-        {/* Ordered Navigation Links with Linked Sub-Menus */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+        {/* Ordered Navigation Links with Icons on ALL Items & Sub-Menus */}
+        <nav className="flex-1 p-2.5 space-y-1 overflow-y-auto">
           {allowedNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
@@ -1112,7 +1540,11 @@ const App: React.FC = () => {
               item.id === 'org' ||
               item.id === 'settings';
 
-            const groupChildren: Array<{ id: string; label: string }> =
+            const groupChildren: Array<{
+              id: string;
+              label: string;
+              icon: React.FC<{ size?: number; className?: string }>;
+            }> =
               item.id === 'my_requests'
                 ? myRequestChildren
                 : item.id === 'attendance_hub'
@@ -1156,9 +1588,10 @@ const App: React.FC = () => {
               <div key={item.id} className="space-y-1">
                 <button
                   type="button"
+                  title={item.label}
                   onClick={() => {
                     if (isGroup) {
-                      if (currentView === item.id) {
+                      if (currentView === item.id && !isSidebarCollapsed) {
                         setExpandedGroups((p) => ({
                           ...p,
                           [item.id]: !p[item.id as keyof typeof p],
@@ -1170,17 +1603,24 @@ const App: React.FC = () => {
                       handleNavigate(item.id);
                     }
                   }}
-                  className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`relative w-full flex items-center gap-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    isSidebarCollapsed
+                      ? 'md:justify-center md:px-2 px-3.5 py-2.5 justify-between'
+                      : 'justify-between px-3.5 py-2.5'
+                  } ${
                     isActive
                       ? 'bg-[var(--primary)] text-[var(--primary-fg)] font-semibold'
                       : 'text-[var(--text-muted)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-main)]'
                   }`}
                 >
-                  <span className="flex items-center gap-3 min-w-0">
+                  <span className={`flex items-center gap-3 min-w-0 ${isSidebarCollapsed ? 'md:justify-center' : ''}`}>
                     <Icon size={18} />
-                    <span className="truncate">{item.label}</span>
+                    <span className={`truncate ${isSidebarCollapsed ? 'md:hidden' : ''}`}>{item.label}</span>
                   </span>
-                  <span className="inline-flex items-center gap-1.5 shrink-0">
+                  {item.badge !== undefined && item.badge > 0 && isSidebarCollapsed && (
+                    <span className="hidden md:inline-block absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-[var(--status-danger-text)]" />
+                  )}
+                  <span className={`inline-flex items-center gap-1.5 shrink-0 ${isSidebarCollapsed ? 'md:hidden' : ''}`}>
                     {item.badge !== undefined && item.badge > 0 && (
                       <span
                         className={`font-mono-tabular text-xs px-1.5 py-0.5 rounded ${
@@ -1202,21 +1642,34 @@ const App: React.FC = () => {
                 </button>
 
                 {hasChildren && isExpanded && (
-                  <div className="ps-4 ms-4 border-s border-[var(--border)] space-y-0.5 py-0.5">
+                  <div
+                    className={`space-y-0.5 py-0.5 ${
+                      isSidebarCollapsed
+                        ? 'ps-4 ms-4 border-s border-[var(--border)] md:ps-0 md:ms-0 md:border-s-0 md:flex md:flex-col md:items-center'
+                        : 'ps-4 ms-4 border-s border-[var(--border)]'
+                    }`}
+                  >
                     {groupChildren.map((child) => {
+                      const ChildIcon = child.icon;
                       const subActive = currentView === item.id && activeGroupSubId === child.id;
                       return (
                         <button
                           key={child.id}
                           type="button"
+                          title={child.label}
                           onClick={() => handleNavigate(item.id, child.id)}
-                          className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors text-start whitespace-nowrap cursor-pointer ${
+                          className={`flex items-center gap-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                            isSidebarCollapsed
+                              ? 'w-full px-3 py-1.5 text-start md:w-10 md:h-8 md:p-0 md:justify-center'
+                              : 'w-full px-3 py-1.5 text-start'
+                          } ${
                             subActive
                               ? 'bg-[var(--primary-soft)] text-[var(--primary-text)] font-semibold'
                               : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--surface-subtle)]'
                           }`}
                         >
-                          <span className="truncate">{child.label}</span>
+                          <ChildIcon size={14} className="shrink-0" />
+                          <span className={`truncate ${isSidebarCollapsed ? 'md:hidden' : ''}`}>{child.label}</span>
                         </button>
                       );
                     })}
@@ -1227,34 +1680,19 @@ const App: React.FC = () => {
           })}
         </nav>
 
-        {/* Current User Profile Card */}
-        <div className="p-3 border-t border-[var(--border)]">
-          <div className="p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--border)] flex items-center justify-between gap-2.5">
-            <button
-              type="button"
-              onClick={() => setIsAccountModalOpen(true)}
-              className="flex items-center gap-2.5 min-w-0 text-start cursor-pointer group"
-              title={t(lang, 'switchAccount')}
-            >
-              <AvatarWithFallback src={currentUser.avatar} name={currentUser.name} sizeClass="w-9 h-9" />
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-[var(--text-main)] truncate group-hover:text-[var(--primary-text)]">
-                  {currentUser.name}
-                </p>
-                <p className="text-[11px] text-[var(--text-muted)] truncate">
-                  {translateRole(currentUser.role, lang)}
-                </p>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentUserId(null)}
-              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--status-danger-text)] hover:bg-[var(--status-danger-bg)] cursor-pointer shrink-0"
-              title={t(lang, 'logout')}
-            >
-              <LogOut size={15} />
-            </button>
-          </div>
+        {/* Sidebar Footer: Logout Only */}
+        <div className="p-2.5 border-t border-[var(--border)]">
+          <button
+            type="button"
+            onClick={() => setCurrentUserId(null)}
+            title={t(lang, 'logout')}
+            className={`w-full flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--card-bg)] text-xs font-semibold text-[var(--status-danger-text)] hover:bg-[var(--status-danger-bg)] hover:border-[var(--status-danger-text)]/35 transition-colors cursor-pointer ${
+              isSidebarCollapsed ? 'px-3 py-2.5 md:p-2.5 md:justify-center justify-center' : 'px-3.5 py-2.5 justify-center'
+            }`}
+          >
+            <LogOut size={16} className="shrink-0" />
+            <span className={isSidebarCollapsed ? 'md:hidden' : ''}>{t(lang, 'logout')}</span>
+          </button>
         </div>
       </aside>
 
@@ -1262,7 +1700,7 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
         {/* Top Bar Contract */}
         <header className="no-print h-14 bg-[var(--card-bg)] border-b border-[var(--border)] px-4 sm:px-6 flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
@@ -1270,23 +1708,87 @@ const App: React.FC = () => {
             >
               <Menu size={18} />
             </button>
-            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] truncate">
-              <span className="font-semibold text-[var(--text-main)] whitespace-nowrap">{brandingOrgName}</span>
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+              title={isSidebarCollapsed ? t(lang, 'expandSidebarLabel') : t(lang, 'collapseSidebarLabel')}
+              aria-label={isSidebarCollapsed ? t(lang, 'expandSidebarLabel') : t(lang, 'collapseSidebarLabel')}
+              className="hidden md:inline-flex items-center justify-center p-1.5 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-[var(--text-muted)] hover:text-[var(--primary-text)] hover:border-[var(--primary)] transition-colors shrink-0 cursor-pointer"
+            >
+              {lang === 'ar' ? (
+                isSidebarCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />
+              ) : isSidebarCollapsed ? (
+                <PanelLeftOpen size={16} />
+              ) : (
+                <PanelLeftClose size={16} />
+              )}
+            </button>
+            {(navHistory.length > 0 || currentView !== getDefaultViewForUser(currentUser)) && (
+              <button
+                type="button"
+                onClick={handleGoBack}
+                title={lang === 'ar' ? 'العودة للصفحة السابقة' : 'Go back'}
+                aria-label={lang === 'ar' ? 'العودة للصفحة السابقة' : 'Go back'}
+                className="inline-flex items-center justify-center p-1.5 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-[var(--text-muted)] hover:text-[var(--primary-text)] hover:border-[var(--primary)] transition-colors shrink-0 cursor-pointer"
+              >
+                {lang === 'ar' ? <ArrowRight size={15} /> : <ArrowLeft size={15} />}
+              </button>
+            )}
+            <nav
+              aria-label={lang === 'ar' ? 'مسار التنقل والعودة' : 'Breadcrumb'}
+              className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] truncate"
+            >
+              <button
+                type="button"
+                onClick={() => handleNavigate(getDefaultViewForUser(currentUser))}
+                title={lang === 'ar' ? 'العودة إلى الرئيسية' : 'Return to Home'}
+                className="font-semibold text-[var(--text-main)] hover:text-[var(--primary-text)] hover:underline whitespace-nowrap cursor-pointer transition-colors"
+              >
+                {brandingOrgName}
+              </button>
               <span aria-hidden="true">/</span>
-              <span
-                className={`whitespace-nowrap ${
-                  activeSubLabel ? 'text-[var(--text-muted)] font-medium' : 'text-[var(--primary-text)] font-semibold'
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentView === 'profile') {
+                    handleGoBack();
+                  } else {
+                    handleNavigate(currentView);
+                  }
+                }}
+                title={
+                  currentView === 'profile'
+                    ? lang === 'ar'
+                      ? 'العودة للخلف'
+                      : 'Go back'
+                    : activeSubLabel
+                    ? lang === 'ar'
+                      ? `العودة إلى ${activeParentLabel}`
+                      : `Return to ${activeParentLabel}`
+                    : activeParentLabel
+                }
+                className={`whitespace-nowrap cursor-pointer transition-colors ${
+                  activeSubLabel
+                    ? 'text-[var(--text-muted)] hover:text-[var(--primary-text)] hover:underline font-medium'
+                    : 'text-[var(--primary-text)] hover:underline font-semibold'
                 }`}
               >
                 {activeParentLabel}
-              </span>
+              </button>
               {activeSubLabel && (
                 <>
                   <span aria-hidden="true">/</span>
-                  <span className="text-[var(--primary-text)] font-semibold whitespace-nowrap">{activeSubLabel}</span>
+                  <button
+                    type="button"
+                    onClick={handleGoBack}
+                    title={lang === 'ar' ? 'العودة للخطوة السابقة' : 'Return to previous screen'}
+                    className="text-[var(--primary-text)] hover:underline font-semibold whitespace-nowrap cursor-pointer transition-colors"
+                  >
+                    {activeSubLabel}
+                  </button>
                 </>
               )}
-            </div>
+            </nav>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -1355,9 +1857,12 @@ const App: React.FC = () => {
             <button
               type="button"
               onClick={() => handleLanguageChange(lang === 'ar' ? 'en' : 'ar')}
-              className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-semibold text-[var(--text-main)] hover:border-[var(--primary)] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              title={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
+              aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-semibold text-[var(--text-main)] hover:border-[var(--primary)] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {t(lang, 'switchLang')}
+              <span>{t(lang, 'switchLang')}</span>
+              <Globe size={14} className="text-[var(--primary-text)]" />
             </button>
 
             <button
@@ -1372,6 +1877,24 @@ const App: React.FC = () => {
               ) : (
                 <Moon size={15} className="text-[var(--primary-text)]" />
               )}
+            </button>
+
+            {/* User Profile Button */}
+            <button
+              type="button"
+              onClick={openProfileView}
+              title={t(lang, 'profileTitle')}
+              aria-label={t(lang, 'profileTitle')}
+              className={`inline-flex items-center gap-2 ps-1.5 pe-2.5 py-1 rounded-lg border transition-colors shrink-0 cursor-pointer ${
+                currentView === 'profile'
+                  ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary-text)]'
+                  : 'border-[var(--border)] bg-[var(--app-bg)] hover:border-[var(--primary)]'
+              }`}
+            >
+              <AvatarWithFallback src={currentUser.avatar} name={currentUser.name} sizeClass="w-6 h-6" />
+              <span className="hidden sm:inline text-xs font-semibold max-w-[120px] truncate">
+                {currentUser.name}
+              </span>
             </button>
           </div>
         </header>
@@ -1419,7 +1942,7 @@ const App: React.FC = () => {
                 settings={systemSettings}
                 lang={lang}
                 activeSubTab={myRequestsSubTab}
-                onChangeSubTab={setMyRequestsSubTab}
+                onChangeSubTab={(tab) => handleNavigate('my_requests', tab)}
                 onLogAudit={(action, details, cat) =>
                   logAudit(action, details, cat, resolvedEmployeeIdForQuickRequest)
                 }
@@ -1458,7 +1981,7 @@ const App: React.FC = () => {
                   lang={lang}
                   currentUser={currentUser}
                   activeSubTab={attendanceSubTab}
-                  onChangeSubTab={setAttendanceSubTab}
+                  onChangeSubTab={(tab) => handleNavigate('attendance_hub', tab)}
                   onLogAudit={(action, details, cat, targetEmpId) =>
                     logAudit(action, details, cat, targetEmpId)
                   }
@@ -1487,7 +2010,7 @@ const App: React.FC = () => {
                 preselectedEmployeeId={preselectedEmpForLeave}
                 onClearPreselectedEmployee={() => setPreselectedEmpForLeave(null)}
                 activeSubTab={requestsSubTab}
-                onChangeSubTab={setRequestsSubTab}
+                onChangeSubTab={(tab) => handleNavigate('requests', tab)}
                 onLogAudit={(action, details, cat) => logAudit(action, details, cat)}
                 onToast={showToast}
                 onNotify={(payload) => emitNotification(payload)}
@@ -1497,7 +2020,7 @@ const App: React.FC = () => {
             {currentView === 'org' && (hasPerm(['view_org', 'view_employees'])) && (
               <OrgHub
                 activeSubTab={orgSubTab}
-                onChangeSubTab={setOrgSubTab}
+                onChangeSubTab={(tab) => handleNavigate('org', tab)}
                 orgUnits={orgUnits}
                 setOrgUnits={setOrgUnits}
                 employees={employees}
@@ -1575,7 +2098,7 @@ const App: React.FC = () => {
                   auditLogs={auditLogs}
                   lang={lang}
                   activeTab={settingsTab}
-                  onChangeTab={setSettingsTab}
+                  onChangeTab={(tab) => handleNavigate('settings', tab)}
                   onChangeLanguage={handleLanguageChange}
                   onChangeTheme={handleThemeChange}
                   onLogAudit={(action, details, cat) => logAudit(action, details, cat)}
@@ -1650,6 +2173,494 @@ const App: React.FC = () => {
                 settings={systemSettings}
                 lang={lang}
               />
+            )}
+
+            {currentView === 'profile' && (
+              <div className="space-y-6 text-[var(--text-main)]">
+                {/* Profile Page Header */}
+                <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-[var(--border)]">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-[var(--primary-soft)] text-[var(--primary-text)]">
+                      <UserCircle size={24} />
+                    </div>
+                    <div>
+                      <h2 className="font-display text-2xl font-bold text-[var(--text-main)]">
+                        {t(lang, 'profileTitle')}
+                      </h2>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {lang === 'ar'
+                          ? 'عرض وتعديل كافة البيانات الشخصية والوظيفية، الأرقام الإدارية، موقع العمل، وكلمة المرور'
+                          : 'View and edit all personal, job, administrative ID, work site, and password details'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleGoBack}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-semibold text-[var(--text-main)] hover:border-[var(--primary)] cursor-pointer"
+                    >
+                      {lang === 'ar' ? <ArrowRight size={14} /> : <ArrowLeft size={14} />}
+                      <span>{lang === 'ar' ? 'العودة' : 'Back'}</span>
+                    </button>
+                    <button
+                      type="submit"
+                      form="profile-full-form"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] transition-colors cursor-pointer shadow-sm"
+                    >
+                      <Save size={14} />
+                      <span>{lang === 'ar' ? 'حفظ البيانات' : 'Save Profile'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentUserId(null)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--status-danger-text)]/30 bg-[var(--status-danger-bg)] text-[var(--status-danger-text)] text-xs font-semibold hover:opacity-90 cursor-pointer"
+                    >
+                      <LogOut size={14} />
+                      <span>{t(lang, 'logout')}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Identity Summary & Avatar Card */}
+                <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <AvatarWithFallback
+                      src={profileAvatar || currentUser.avatar}
+                      name={profileName || currentUser.name}
+                      sizeClass="w-20 h-20"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-display font-bold text-xl text-[var(--text-main)] truncate">
+                          {profileName || currentUser.name}
+                        </h3>
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-[var(--primary-soft)] text-[var(--primary-text)]">
+                          {translateRole(currentUser.role, lang)}
+                        </span>
+                        {linkedEmployeeForProfile?.biometricExempt && (
+                          <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-[var(--status-success-bg)] text-[var(--status-success-text)]">
+                            {lang === 'ar' ? 'معفى من البصمة' : 'Biometric Exempt'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[var(--text-muted)] font-mono-tabular mt-1 truncate">
+                        {profileAdminId ? `${lang === 'ar' ? 'الرقم الإداري' : 'ID'}: ${profileAdminId} · ` : ''}
+                        {profileUsername ? `@${profileUsername} · ` : ''}
+                        {profileEmail || currentUser.email}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-[var(--text-muted)]">
+                        {profileJobTitle && <span>{profileJobTitle}</span>}
+                        {profileDepartment && <span>· {profileDepartment}</span>}
+                        {currentUser.lastLogin && (
+                          <span>
+                            · {lang === 'ar' ? `آخر دخول: ${currentUser.lastLogin}` : `Last login: ${currentUser.lastLogin}`}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-semibold hover:border-[var(--primary)] cursor-pointer">
+                      <Upload size={14} />
+                      <span>{t(lang, 'uploadAvatarBtn')}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleProfileAvatarUpload(f);
+                        }}
+                      />
+                    </label>
+                    {profileAvatar && (
+                      <button
+                        type="button"
+                        onClick={() => setProfileAvatar('')}
+                        className="px-3.5 py-2 rounded-lg border border-[var(--border)] text-xs text-[var(--status-danger-text)] hover:bg-[var(--status-danger-bg)] cursor-pointer"
+                      >
+                        {lang === 'ar' ? 'إزالة الصورة' : 'Remove photo'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Full Editable Profile Form */}
+                <form id="profile-full-form" onSubmit={handleSaveProfile} className="space-y-5">
+                  {profileError && (
+                    <div className="p-3.5 rounded-xl bg-[var(--status-danger-bg)] border border-[var(--status-danger-text)]/30 text-[var(--status-danger-text)] text-xs font-medium">
+                      {profileError}
+                    </div>
+                  )}
+
+                  {/* Section 1: Personal & Account Information */}
+                  <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
+                    <h4 className="font-display font-bold text-base text-[var(--text-main)] flex items-center gap-2">
+                      <UserCircle size={18} className="text-[var(--primary-text)]" />
+                      <span>{lang === 'ar' ? 'البيانات الشخصية وبيانات الدخول' : 'Personal & Account Information'}</span>
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {lang === 'ar' ? 'الاسم الكامل' : 'Full Name'} *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={profileName}
+                          onChange={(e) => setProfileName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'usernameLabel')}
+                        </label>
+                        <input
+                          type="text"
+                          value={profileUsername}
+                          onChange={(e) => setProfileUsername(e.target.value)}
+                          dir="ltr"
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-mono-tabular outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'email')} *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={profileEmail}
+                          onChange={(e) => setProfileEmail(e.target.value)}
+                          dir="ltr"
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-mono-tabular outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1 flex items-center gap-1">
+                          <Phone size={12} />
+                          <span>{lang === 'ar' ? 'رقم الهاتف' : 'Phone Number'}</span>
+                        </label>
+                        <input
+                          type="tel"
+                          value={profilePhone}
+                          onChange={(e) => setProfilePhone(e.target.value)}
+                          dir="ltr"
+                          placeholder="+218..."
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-mono-tabular outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1 flex items-center gap-1">
+                          <Hash size={12} />
+                          <span>{lang === 'ar' ? 'الرقم الإداري' : 'Administrative ID'}</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={profileAdminId}
+                          onChange={(e) => setProfileAdminId(e.target.value)}
+                          dir="ltr"
+                          placeholder="EMP-001"
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-mono-tabular outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1 flex items-center gap-1">
+                          <Hash size={12} />
+                          <span>{lang === 'ar' ? 'الرقم التسلسلي' : 'Serial No.'}</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={profileSerialNo}
+                          onChange={(e) => setProfileSerialNo(e.target.value)}
+                          dir="ltr"
+                          placeholder="1"
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-mono-tabular outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 2: Employment & Organizational Details */}
+                  <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
+                    <h4 className="font-display font-bold text-base text-[var(--text-main)] flex items-center gap-2">
+                      <Briefcase size={18} className="text-[var(--primary-text)]" />
+                      <span>{lang === 'ar' ? 'البيانات الوظيفية والتنظيمية' : 'Employment & Organizational Details'}</span>
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {lang === 'ar' ? 'المسمى الوظيفي' : 'Job Title'}
+                        </label>
+                        <input
+                          type="text"
+                          value={profileJobTitle}
+                          onChange={(e) => setProfileJobTitle(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {lang === 'ar' ? 'الإدارة / القسم' : 'Department / Division'}
+                        </label>
+                        <select
+                          value={profileDepartment}
+                          onChange={(e) => setProfileDepartment(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        >
+                          <option value="">{lang === 'ar' ? '-- اختر الإدارة / القسم --' : '-- Select Department --'}</option>
+                          {orgUnits.map((unit) => (
+                            <option key={unit.id} value={unit.name}>
+                              {unit.name}
+                            </option>
+                          ))}
+                          {profileDepartment && !orgUnits.some((u) => u.name === profileDepartment) && (
+                            <option value={profileDepartment}>{profileDepartment}</option>
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {lang === 'ar' ? 'المسؤول المباشر' : 'Direct Manager'}
+                        </label>
+                        <input
+                          type="text"
+                          value={profileDirectManager}
+                          onChange={(e) => setProfileDirectManager(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {lang === 'ar' ? 'نوع التعاقد' : 'Contract Type'}
+                        </label>
+                        <select
+                          value={profileContractType}
+                          onChange={(e) => setProfileContractType(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        >
+                          <option value="">{lang === 'ar' ? '-- اختر نوع التعاقد --' : '-- Select Contract Type --'}</option>
+                          {systemSettings.contractTypes.map((ct) => (
+                            <option key={ct.id} value={ct.name}>
+                              {ct.name}
+                            </option>
+                          ))}
+                          {profileContractType && !systemSettings.contractTypes.some((c) => c.name === profileContractType) && (
+                            <option value={profileContractType}>{profileContractType}</option>
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {lang === 'ar' ? 'تاريخ التعيين' : 'Hire Date'}
+                        </label>
+                        <input
+                          type="date"
+                          value={profileHireDate}
+                          onChange={(e) => setProfileHireDate(e.target.value)}
+                          dir="ltr"
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-mono-tabular outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {lang === 'ar' ? 'الحالة الوظيفية' : 'Employment Status'}
+                        </label>
+                        <select
+                          value={profileStatus}
+                          onChange={(e) => setProfileStatus(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        >
+                          <option value="على رأس عمله">{lang === 'ar' ? 'على رأس عمله' : 'Active'}</option>
+                          <option value="إجازة">{lang === 'ar' ? 'إجازة' : 'On Leave'}</option>
+                          <option value="موقوف">{lang === 'ar' ? 'موقوف' : 'Suspended'}</option>
+                          <option value="منتهي">{lang === 'ar' ? 'منتهي' : 'Terminated'}</option>
+                          {profileStatus &&
+                            !['على رأس عمله', 'إجازة', 'موقوف', 'منتهي'].includes(profileStatus) && (
+                              <option value={profileStatus}>{profileStatus}</option>
+                            )}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 3: Work Site, Attendance & Notes */}
+                  <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
+                    <h4 className="font-display font-bold text-base text-[var(--text-main)] flex items-center gap-2">
+                      <MapPin size={18} className="text-[var(--primary-text)]" />
+                      <span>{lang === 'ar' ? 'موقع العمل والحضور والملاحظات' : 'Work Site, Attendance & Notes'}</span>
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'assignedWorkSiteLabel')}
+                        </label>
+                        <select
+                          value={profileLocation}
+                          onChange={(e) => {
+                            const selectedName = e.target.value;
+                            setProfileLocation(selectedName);
+                            const matchedSite = getEffectiveWorkSiteLocations(systemSettings.attendanceConfig).find(
+                              (s) => s.name === selectedName
+                            );
+                            setProfileAssignedWorkSiteId(matchedSite?.id || '');
+                          }}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        >
+                          <option value="">{lang === 'ar' ? '-- اختر موقع العمل --' : '-- Select Work Site --'}</option>
+                          {getEffectiveWorkSiteLocations(systemSettings.attendanceConfig).map((site) => (
+                            <option key={site.id} value={site.name}>
+                              {site.name}
+                            </option>
+                          ))}
+                          {profileLocation &&
+                            !getEffectiveWorkSiteLocations(systemSettings.attendanceConfig).some(
+                              (s) => s.name === profileLocation
+                            ) && <option value={profileLocation}>{profileLocation}</option>}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'defaultShiftModeLabel')}
+                        </label>
+                        <select
+                          value={profileShiftMode}
+                          onChange={(e) =>
+                            setProfileShiftMode(e.target.value === 'flexible' ? 'flexible' : 'standard')
+                          }
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        >
+                          <option value="standard">{t(lang, 'shiftStandardLabel')}</option>
+                          <option value="flexible">{t(lang, 'shiftFlexibleLabel')}</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'biometricStatusCol')}
+                        </label>
+                        <div className="px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-semibold">
+                          <span
+                            className={
+                              linkedEmployeeForProfile?.biometricExempt
+                                ? 'text-[var(--status-success-text)]'
+                                : 'text-[var(--text-main)]'
+                            }
+                          >
+                            {linkedEmployeeForProfile?.biometricExempt
+                              ? lang === 'ar'
+                                ? 'معفى من البصمة'
+                                : 'Biometric Exempt'
+                              : lang === 'ar'
+                              ? 'ملزم بالبصمة الجغرافية'
+                              : 'Geofenced Biometric Required'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="md:col-span-2 lg:col-span-3">
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {lang === 'ar' ? 'ملاحظات إدارية' : 'Administrative Notes'}
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={profileNotes}
+                          onChange={(e) => setProfileNotes(e.target.value)}
+                          placeholder={lang === 'ar' ? 'ملاحظات إضافية...' : 'Additional notes...'}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section 4: Password Change */}
+                  <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl p-6 space-y-4">
+                    <h4 className="font-display font-bold text-base text-[var(--text-main)] flex items-center gap-2">
+                      <KeyRound size={18} className="text-[var(--primary-text)]" />
+                      <span>{lang === 'ar' ? 'تغيير كلمة المرور (اختياري)' : 'Change Password (Optional)'}</span>
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'changePasswordLabel')}
+                        </label>
+                        <input
+                          type="password"
+                          value={profilePassword}
+                          onChange={(e) => setProfilePassword(e.target.value)}
+                          placeholder={lang === 'ar' ? 'اتركه فارغاً بدون تغيير' : 'Leave blank to keep current'}
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'confirmPasswordLabel')}
+                        </label>
+                        <input
+                          type="password"
+                          value={profileConfirmPassword}
+                          onChange={(e) => setProfileConfirmPassword(e.target.value)}
+                          placeholder="••••••"
+                          className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Prominent Form Save Action Bar */}
+                  <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs text-[var(--text-muted)]">
+                      {lang === 'ar'
+                        ? 'يتم تحديث بيانات حسابك وسجلك الوظيفي بشكل متزامن عند الحفظ.'
+                        : 'Account details and linked staff record synchronize automatically on save.'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={populateProfileForm}
+                        className="px-4 py-2 rounded-lg border border-[var(--border)] text-xs font-medium hover:bg-[var(--surface-subtle)] cursor-pointer"
+                      >
+                        {lang === 'ar' ? 'إعادة ضبط' : 'Reset'}
+                      </button>
+                      <button
+                        type="submit"
+                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-bold hover:bg-[var(--primary-hover)] transition-colors cursor-pointer shadow-sm"
+                      >
+                        <Save size={15} />
+                        <span>{lang === 'ar' ? 'حفظ كافة التعديلات' : 'Save All Changes'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                {/* Active Permissions Summary */}
+                <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-2xl p-5 space-y-3">
+                  <h5 className="text-sm font-bold flex items-center gap-2 text-[var(--text-main)]">
+                    <ShieldCheck size={16} className="text-[var(--primary-text)]" />
+                    <span>
+                      {t(lang, 'activePermissionsTitle')} ({currentUser.permissions.length})
+                    </span>
+                  </h5>
+                  <div className="flex flex-wrap gap-1.5 max-h-60 overflow-y-auto">
+                    {currentUser.permissions.map((permId) => {
+                      const def =
+                        PERMISSIONS_LIST.find((p) => p.id === permId) ||
+                        (systemSettings.customPermissions || []).find((p) => p.id === permId);
+                      const label = def ? (lang === 'ar' ? def.labelAr : def.labelEn) : permId;
+                      return (
+                        <span
+                          key={permId}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] bg-[var(--app-bg)] border border-[var(--border)] text-[var(--text-main)]"
+                        >
+                          <Check size={11} className="text-[var(--status-success-text)]" />
+                          <span>{label}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -1726,65 +2737,6 @@ const App: React.FC = () => {
           });
         }}
       />
-
-      {/* Switch Account Modal */}
-      {isAccountModalOpen && (
-        <div className="fixed inset-0 z-[80] bg-black/65 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between">
-              <h3 className="font-display font-bold text-sm">{t(lang, 'switchAccount')}</h3>
-              <button
-                type="button"
-                onClick={() => setIsAccountModalOpen(false)}
-                className="p-1 text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-4 space-y-2 max-h-72 overflow-y-auto">
-              {appUsers
-                .filter((u) => u.status === 'Active')
-                .map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => {
-                      setCurrentUserId(u.id);
-                      setIsAccountModalOpen(false);
-                      setCurrentView(getDefaultViewForUser(u));
-                      showToast('success', `${t(lang, 'welcomeBack')} ${u.name}`);
-                    }}
-                    className={`w-full flex items-center justify-between gap-3 p-3 rounded-lg border text-start transition-colors cursor-pointer ${
-                      u.id === currentUser.id
-                        ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
-                        : 'border-[var(--border)] bg-[var(--app-bg)] hover:border-[var(--primary)]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <AvatarWithFallback src={u.avatar} name={u.name} sizeClass="w-8 h-8" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate">{u.name}</p>
-                        <p className="text-[11px] text-[var(--text-muted)]">{translateRole(u.role, lang)}</p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-            </div>
-            <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--surface-subtle)]">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAccountModalOpen(false);
-                  setCurrentUserId(null);
-                }}
-                className="w-full py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-semibold text-[var(--text-main)] hover:border-[var(--primary)] cursor-pointer"
-              >
-                {lang === 'ar' ? 'فتح صفحة تسجيل الدخول الكاملة' : 'Open Full Sign-In Page'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((p) => p.filter((x) => x.id !== id))} />
     </div>

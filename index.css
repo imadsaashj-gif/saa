@@ -1,7 +1,8 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
-:root {
+:root,
+.theme-light {
   --app-bg: #f6f4ee;
   --card-bg: #ffffff;
   --surface-subtle: #ede9df;
