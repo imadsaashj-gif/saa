@@ -1,0 +1,8 @@
+{
+  "name": "Department of Archaeology - Vacation Manager",
+  "description": "A comprehensive dashboard for managing employee details and vacations, featuring Excel import/export capabilities, data visualization, and AI-powered insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

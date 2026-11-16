@@ -1,0 +1,197 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --app-bg: #f6f4ee;
+  --card-bg: #ffffff;
+  --surface-subtle: #ede9df;
+  --sidebar-bg: #faf8f4;
+  --text-main: #181612;
+  --text-muted: #615b50;
+  --border: #dfd9cc;
+  --primary: #8c6a1b;
+  --primary-hover: #735512;
+  --primary-fg: #ffffff;
+  --primary-soft: #f3ead3;
+  --primary-text: #745510;
+  --status-success-bg: #ecfdf3;
+  --status-success-text: #15803d;
+  --status-success-border: #bbf7d0;
+  --status-warn-bg: #fffbeb;
+  --status-warn-text: #b45309;
+  --status-warn-border: #fde68a;
+  --status-danger-bg: #fef2f2;
+  --status-danger-text: #b91c1c;
+  --status-danger-border: #fecaca;
+  --status-info-bg: #f0f4f8;
+  --status-info-text: #334e68;
+  --status-info-border: #d9e2ec;
+}
+
+.dark {
+  --app-bg: #0d0e12;
+  --card-bg: #15171d;
+  --surface-subtle: #1d2028;
+  --sidebar-bg: #111318;
+  --text-main: #f3efe6;
+  --text-muted: #9d9689;
+  --border: #272a34;
+  --primary: #b58927;
+  --primary-hover: #c99b35;
+  --primary-fg: #0d0e12;
+  --primary-soft: rgba(181, 137, 39, 0.14);
+  --primary-text: #dcb85d;
+  --status-success-bg: rgba(22, 163, 74, 0.14);
+  --status-success-text: #4ade80;
+  --status-success-border: rgba(74, 222, 128, 0.25);
+  --status-warn-bg: rgba(217, 119, 6, 0.16);
+  --status-warn-text: #fbbf24;
+  --status-warn-border: rgba(251, 191, 36, 0.28);
+  --status-danger-bg: rgba(220, 38, 38, 0.15);
+  --status-danger-text: #f87171;
+  --status-danger-border: rgba(248, 113, 113, 0.28);
+  --status-info-bg: rgba(181, 137, 39, 0.14);
+  --status-info-text: #e2c16b;
+  --status-info-border: rgba(226, 193, 107, 0.28);
+}
+
+html {
+  background-color: var(--app-bg);
+  color: var(--text-main);
+  font-family: 'IBM Plex Sans Arabic', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+.dark body {
+  letter-spacing: 0.005em;
+}
+
+.font-display {
+  font-family: 'Cairo', 'Plus Jakarta Sans', system-ui, sans-serif;
+  text-wrap: balance;
+}
+
+.font-mono-tabular {
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smooth minimal scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--app-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Native date inputs in dark mode */
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.85) sepia(0.35) saturate(1.8) hue-rotate(8deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only-slip {
+    position: static !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+/* Leaflet map container theme consistency & RTL/Tailwind compatibility */
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  direction: ltr !important;
+  font-family: 'IBM Plex Sans Arabic', 'Plus Jakarta Sans', system-ui, sans-serif !important;
+  background-color: var(--app-bg) !important;
+  z-index: 0;
+}
+
+.leaflet-container img.leaflet-tile,
+.leaflet-container .leaflet-tile-pane img {
+  max-width: none !important;
+  max-height: none !important;
+  mix-blend-mode: normal !important;
+}
+
+.leaflet-popup-content {
+  text-align: start;
+}
+
+.geo-dark-tile {
+  filter: invert(100%) hue-rotate(180deg) brightness(92%) contrast(92%) !important;
+}
+
+.dark .leaflet-bar a {
+  background-color: var(--card-bg) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border) !important;
+}
+
+.dark .leaflet-bar a:hover {
+  background-color: var(--surface-subtle) !important;
+  color: var(--primary-text) !important;
+}
+
+.dark .leaflet-popup-content-wrapper,
+.dark .leaflet-popup-tip {
+  background-color: var(--card-bg) !important;
+  color: var(--text-main) !important;
+  border: 1px solid var(--border);
+}
+
+.leaflet-control-attribution {
+  font-size: 9px !important;
+  opacity: 0.72;
+  background: var(--card-bg) !important;
+  color: var(--text-muted) !important;
+}
+
+@keyframes geoPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+.geo-pulse-ring {
+  animation: geoPulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
