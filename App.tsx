@@ -136,6 +136,7 @@ const STORAGE_KEYS = {
   usersPhase2Migrated: 'arch_hr_users_phase2_migrated_v1',
   usersPhase3Migrated: 'arch_hr_users_phase3_migrated_v1',
   usersPhase4Migrated: 'arch_hr_users_phase4_migrated_v1',
+  usersExportPermMigrated: 'arch_hr_users_export_perm_v1',
   usersSuperAdminOnlyMigrated: 'arch_hr_users_superadmin_only_v1',
   audit: 'arch_hr_audit_v2',
   currentUserId: 'arch_hr_current_user_v2',
@@ -185,6 +186,14 @@ function hydrateUsers(rawUsers: AppUser[], extraPermIds: string[] = []): AppUser
     }
   })();
 
+  const needsExportPermBackfill = (() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.usersExportPermMigrated) !== '1';
+    } catch {
+      return false;
+    }
+  })();
+
   if (needsSuperAdminOnlyReset) {
     const existingSuper = rawUsers.find((u) => u.role === 'SuperAdmin' || u.id === SUPER_ADMIN_USER.id);
     const normalizedSuper: AppUser = {
@@ -203,6 +212,7 @@ function hydrateUsers(rawUsers: AppUser[], extraPermIds: string[] = []): AppUser
       localStorage.setItem(STORAGE_KEYS.usersPhase2Migrated, '1');
       localStorage.setItem(STORAGE_KEYS.usersPhase3Migrated, '1');
       localStorage.setItem(STORAGE_KEYS.usersPhase4Migrated, '1');
+      localStorage.setItem(STORAGE_KEYS.usersExportPermMigrated, '1');
     } catch {
       // Ignore storage write issue
     }
@@ -288,6 +298,12 @@ function hydrateUsers(rawUsers: AppUser[], extraPermIds: string[] = []): AppUser
       }
     }
 
+    if (needsExportPermBackfill) {
+      if (u.role === 'Admin' || u.role === 'Manager' || u.role === 'HR') {
+        perms = Array.from(new Set([...perms, 'export_excel']));
+      }
+    }
+
     return perms === u.permissions ? u : { ...u, permissions: perms };
   });
 
@@ -308,6 +324,13 @@ function hydrateUsers(rawUsers: AppUser[], extraPermIds: string[] = []): AppUser
   if (needsPhase4Backfill) {
     try {
       localStorage.setItem(STORAGE_KEYS.usersPhase4Migrated, '1');
+    } catch {
+      // Ignore storage write issue
+    }
+  }
+  if (needsExportPermBackfill) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.usersExportPermMigrated, '1');
     } catch {
       // Ignore storage write issue
     }
@@ -1891,9 +1914,13 @@ const App: React.FC = () => {
                   : 'border-[var(--border)] bg-[var(--app-bg)] hover:border-[var(--primary)]'
               }`}
             >
-              <AvatarWithFallback src={currentUser.avatar} name={currentUser.name} sizeClass="w-6 h-6" />
-              <span className="hidden sm:inline text-xs font-semibold max-w-[120px] truncate">
-                {currentUser.name}
+              <AvatarWithFallback
+                src={currentUser.avatar}
+                name={linkedEmployeeForProfile?.fullName || currentUser.name}
+                sizeClass="w-6 h-6"
+              />
+              <span className="hidden sm:inline text-xs font-semibold max-w-[160px] truncate">
+                {linkedEmployeeForProfile?.fullName || currentUser.name}
               </span>
             </button>
           </div>

@@ -386,6 +386,7 @@ export const PERMISSIONS_LIST: PermissionDefinition[] = [
   { id: 'view_vacations', labelEn: 'View Requests & Balances', labelAr: 'عرض طلبات الموظفين والأرصدة', categoryEn: 'Requests', categoryAr: 'الطلبات' },
   { id: 'manage_vacations', labelEn: 'Approve / Manage Requests', labelAr: 'اعتماد وإدارة طلبات الإجازات وأذونات الخروج', categoryEn: 'Requests', categoryAr: 'الطلبات' },
   { id: 'approve_exceptions', labelEn: 'Approve Substitute Exceptions (Manager)', labelAr: 'اعتماد طلبات استثناء البديل (صلاحية المدير)', categoryEn: 'Requests', categoryAr: 'الطلبات' },
+  { id: 'export_excel', labelEn: 'Export Excel Files (Attendance, Absences, Violations, Requests)', labelAr: 'تصدير ملفات إكسل (الحضور والغياب والمخالفات والطلبات)', categoryEn: 'Reports & Export', categoryAr: 'التقارير والتصدير' },
   { id: 'view_org', labelEn: 'View Org Structure', labelAr: 'عرض الهيكل التنظيمي', categoryEn: 'Organization', categoryAr: 'الهيكل التنظيمي' },
   { id: 'manage_org', labelEn: 'Manage Org Structure', labelAr: 'تعديل الإدارات والأقسام', categoryEn: 'Organization', categoryAr: 'الهيكل التنظيمي' },
   { id: 'view_archive', labelEn: 'Access Archive Page', labelAr: 'عرض صفحة الأرشيف حسب الصلاحية', categoryEn: 'Archive', categoryAr: 'الأرشيف' },
