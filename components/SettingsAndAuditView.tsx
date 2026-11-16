@@ -1,24 +1,36 @@
 import React, { useEffect, useState } from 'react';
 import {
   Bell,
+  CalendarDays,
   Check,
   CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
   Database,
   Download,
   Edit,
+  Eye,
+  Globe,
+  History,
   Image as ImageIcon,
+  Lock,
   Mail,
+  Monitor,
   Moon,
   Palette,
   Plus,
   RotateCcw,
   Send,
   Settings,
+  Shield,
+  ShieldCheck,
+  SlidersHorizontal,
   Square,
   Sun,
   Trash2,
   Upload,
-  CalendarDays,
+  User,
 } from 'lucide-react';
 import {
   AbsenceRecord,
@@ -120,6 +132,23 @@ function compressImageToDataUrl(file: File, maxWidth: number, quality = 0.85): P
   });
 }
 
+function getPreviewGlassBgClass(opacity?: number): string {
+  const val = opacity ?? 20;
+  if (val <= 12) return 'bg-[var(--card-bg)]/10';
+  if (val <= 17) return 'bg-[var(--card-bg)]/15';
+  if (val <= 22) return 'bg-[var(--card-bg)]/20';
+  if (val <= 27) return 'bg-[var(--card-bg)]/25';
+  if (val <= 34) return 'bg-[var(--card-bg)]/30';
+  if (val <= 44) return 'bg-[var(--card-bg)]/40';
+  if (val <= 54) return 'bg-[var(--card-bg)]/50';
+  if (val <= 64) return 'bg-[var(--card-bg)]/60';
+  if (val <= 74) return 'bg-[var(--card-bg)]/70';
+  if (val <= 84) return 'bg-[var(--card-bg)]/80';
+  if (val <= 92) return 'bg-[var(--card-bg)]/90';
+  if (val <= 97) return 'bg-[var(--card-bg)]/95';
+  return 'bg-[var(--card-bg)]';
+}
+
 const SettingsAndAuditView: React.FC<SettingsAndAuditViewProps> = ({
   settings,
   setSettings,
@@ -182,6 +211,8 @@ const SettingsAndAuditView: React.FC<SettingsAndAuditViewProps> = ({
     ...DEFAULT_BRANDING,
     ...(settings.branding || {}),
   }));
+  const [previewLang, setPreviewLang] = useState<Language>(lang);
+  const [previewTheme, setPreviewTheme] = useState<ThemeOption>(settings.currentTheme || 'dark');
 
   useEffect(() => {
     setBrandingForm({
@@ -418,19 +449,26 @@ const SettingsAndAuditView: React.FC<SettingsAndAuditViewProps> = ({
     reader.readAsText(backupFile);
   };
 
-  const handleUploadBrandingImage = async (field: 'logoDataUrl' | 'loginImageDataUrl', file?: File | null) => {
+  const handleUploadBrandingImage = async (
+    field: 'logoDataUrl' | 'loginLogoDataUrl' | 'loginImageDataUrl',
+    file?: File | null
+  ) => {
     if (!file) return;
     try {
-      const maxWidth = field === 'logoDataUrl' ? 400 : 1280;
-      const dataUrl = await compressImageToDataUrl(file, maxWidth, 0.85);
+      const maxWidth = field === 'logoDataUrl' ? 400 : field === 'loginLogoDataUrl' ? 660 : 1280;
+      const dataUrl = await compressImageToDataUrl(file, maxWidth, 0.88);
       setBrandingForm((prev) => ({ ...prev, [field]: dataUrl }));
       setSettings((prev) => ({
         ...prev,
         branding: { ...DEFAULT_BRANDING, ...(prev.branding || {}), ...brandingForm, [field]: dataUrl },
       }));
       onLogAudit(
-        lang === 'ar' ? 'تحديث صور الهوية' : 'Updated Branding Asset',
-        field === 'logoDataUrl' ? 'Organization Logo' : 'Login Showcase Image',
+        lang === 'ar' ? 'تحديث صور الهوية والدخول' : 'Updated Login/Branding Asset',
+        field === 'logoDataUrl'
+          ? 'Organization Logo'
+          : field === 'loginLogoDataUrl'
+          ? 'Login Banner Logo (220x81.89)'
+          : 'Login Showcase Image',
         'settings'
       );
       onToast('success', lang === 'ar' ? 'تم رفع وتحديث الصورة بنجاح.' : 'Image uploaded and applied.');
@@ -487,19 +525,27 @@ const SettingsAndAuditView: React.FC<SettingsAndAuditViewProps> = ({
     setNotifForm((prev) => ({ ...prev, browserEnabled: enabled }));
   };
 
-  const availableTabs: Array<{ id: SettingsTab; label: string }> = [
-    ...(canManageSettings ? [{ id: 'branding' as const, label: t(lang, 'settingsTabBranding') }] : []),
-    ...(canManageUsers ? [{ id: 'users' as const, label: t(lang, 'settingsTabUsers') }] : []),
+  const availableTabs: Array<{
+    id: SettingsTab;
+    label: string;
+    icon: React.FC<{ size?: number; className?: string }>;
+  }> = [
+    ...(canManageSettings
+      ? [{ id: 'branding' as const, label: t(lang, 'settingsTabBranding'), icon: Palette }]
+      : []),
+    ...(canManageUsers
+      ? [{ id: 'users' as const, label: t(lang, 'settingsTabUsers'), icon: Shield }]
+      : []),
     ...(canManageAttendanceAdmin
-      ? [{ id: 'attendance_admin' as const, label: t(lang, 'settingsTabAttendanceAdmin') }]
+      ? [{ id: 'attendance_admin' as const, label: t(lang, 'settingsTabAttendanceAdmin'), icon: Clock }]
       : []),
     ...(canManageSettings
       ? [
-          { id: 'config' as const, label: t(lang, 'settingsTabConfig') },
-          { id: 'holidays' as const, label: t(lang, 'settingsTabHolidays') },
-          { id: 'notifications' as const, label: t(lang, 'settingsTabNotifications') },
-          { id: 'backup' as const, label: t(lang, 'settingsTabBackup') },
-          { id: 'audit' as const, label: t(lang, 'settingsTabAudit') },
+          { id: 'config' as const, label: t(lang, 'settingsTabConfig'), icon: SlidersHorizontal },
+          { id: 'holidays' as const, label: t(lang, 'settingsTabHolidays'), icon: CalendarDays },
+          { id: 'notifications' as const, label: t(lang, 'settingsTabNotifications'), icon: Bell },
+          { id: 'backup' as const, label: t(lang, 'settingsTabBackup'), icon: Database },
+          { id: 'audit' as const, label: t(lang, 'settingsTabAudit'), icon: History },
         ]
       : []),
   ];
@@ -529,26 +575,263 @@ const SettingsAndAuditView: React.FC<SettingsAndAuditViewProps> = ({
         </div>
 
         <div className="inline-flex flex-wrap p-1 rounded-lg bg-[var(--surface-subtle)] border border-[var(--border)] gap-1">
-          {availableTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === tab.id
-                  ? 'bg-[var(--card-bg)] text-[var(--primary-text)] shadow-xs'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {availableTabs.map((tab) => {
+            const TabIcon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  activeTab === tab.id
+                    ? 'bg-[var(--card-bg)] text-[var(--primary-text)] shadow-xs'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                }`}
+              >
+                <TabIcon size={13} className="shrink-0" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Tab: Branding & Login Page Image */}
+      {/* Tab: Branding & Login Page Management */}
       {activeTab === 'branding' && canManageSettings && (
         <form onSubmit={handleSaveBranding} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Live Miniature Login Screen Preview */}
+          <div className="lg:col-span-2 bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 sm:p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Monitor size={17} className="text-[var(--primary-text)]" />
+                <div>
+                  <h4 className="font-display text-sm font-bold text-[var(--text-main)]">
+                    {lang === 'ar'
+                      ? 'شاشة معاينة حية لصفحة الدخول'
+                      : 'Live Login Page Mini-Screen Preview'}
+                  </h4>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    {lang === 'ar'
+                      ? 'تعرض جميع التعديلات مباشرة (المحاذاة، الشفافية، الشعار، النصوص، والشرط) لصفحة الدخول فقط'
+                      : 'Shows all live edits (alignment, transparency, logo, copy, and access notice) for the login page'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="font-mono-tabular text-[11px] font-bold px-2.5 py-1 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+                  {lang === 'ar' ? 'الشفافية:' : 'Opacity:'} {brandingForm.loginCardOpacity ?? 20}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewLang((p) => (p === 'ar' ? 'en' : 'ar'))}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-semibold text-[var(--text-main)] hover:border-[var(--primary)] cursor-pointer"
+                >
+                  <span>{previewLang === 'ar' ? 'EN' : 'عربي'}</span>
+                  <Globe size={13} className="text-[var(--primary-text)]" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewTheme((p) => (p === 'dark' ? 'light' : 'dark'))}
+                  aria-label="Toggle preview theme"
+                  className="p-1.5 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-[var(--text-main)] hover:border-[var(--primary)] cursor-pointer"
+                >
+                  {previewTheme === 'dark' ? (
+                    <Sun size={13} className="text-[var(--primary-text)]" />
+                  ) : (
+                    <Moon size={13} className="text-[var(--primary-text)]" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const pOrgNameAr = brandingForm.orgNameAr || DEFAULT_BRANDING.orgNameAr;
+              const pOrgNameEn = brandingForm.orgNameEn || DEFAULT_BRANDING.orgNameEn;
+              const pOrgName = previewLang === 'ar' ? pOrgNameAr : pOrgNameEn;
+              const pOrgTitleAr = brandingForm.orgTitleAr || DEFAULT_BRANDING.orgTitleAr;
+              const pOrgTitleEn = brandingForm.orgTitleEn || DEFAULT_BRANDING.orgTitleEn;
+              const pSystemCode = brandingForm.loginSystemCode || DEFAULT_BRANDING.loginSystemCode || 'HR PORTAL';
+              const pVersionBadge =
+                brandingForm.loginVersionBadge || DEFAULT_BRANDING.loginVersionBadge || 'PORTAL v2.4';
+              const pShowcaseTitle =
+                previewLang === 'ar'
+                  ? brandingForm.loginShowcaseTitleAr || DEFAULT_BRANDING.loginShowcaseTitleAr
+                  : brandingForm.loginShowcaseTitleEn || DEFAULT_BRANDING.loginShowcaseTitleEn;
+              const pHeadline =
+                previewLang === 'ar'
+                  ? brandingForm.loginHeadlineAr || DEFAULT_BRANDING.loginHeadlineAr
+                  : brandingForm.loginHeadlineEn || DEFAULT_BRANDING.loginHeadlineEn;
+              const pTagsRaw =
+                previewLang === 'ar'
+                  ? brandingForm.loginShowcaseTagsAr || DEFAULT_BRANDING.loginShowcaseTagsAr || ''
+                  : brandingForm.loginShowcaseTagsEn || DEFAULT_BRANDING.loginShowcaseTagsEn || '';
+              const pTags = pTagsRaw
+                .split(/[،,]/)
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .slice(0, 3);
+              const pRestricted =
+                previewLang === 'ar'
+                  ? brandingForm.loginRestrictedNoticeAr || DEFAULT_BRANDING.loginRestrictedNoticeAr
+                  : brandingForm.loginRestrictedNoticeEn || DEFAULT_BRANDING.loginRestrictedNoticeEn;
+              const pGlassClass = getPreviewGlassBgClass(brandingForm.loginCardOpacity);
+
+              return (
+                <div
+                  dir={previewLang === 'ar' ? 'rtl' : 'ltr'}
+                  className={`${
+                    previewTheme === 'dark' ? 'dark' : 'theme-light'
+                  } relative w-full h-[360px] rounded-xl overflow-hidden border border-[var(--border)] flex items-stretch justify-start bg-[#111318] select-none pointer-events-none shadow-inner`}
+                >
+                  <img
+                    src={brandingForm.loginImageDataUrl || loginShowcaseImg}
+                    alt="Login Preview"
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div
+                    className={`absolute inset-0 bg-gradient-to-b ${
+                      previewTheme === 'dark'
+                        ? 'from-black/35 via-black/25 to-black/70'
+                        : 'from-white/60 via-white/40 to-black/35'
+                    }`}
+                  />
+
+                  {/* Mini Docked Translucent Panel */}
+                  <div
+                    className={`relative z-10 w-[235px] sm:w-[260px] h-full shrink-0 ${pGlassClass} backdrop-blur-xl border-e border-[var(--border)] px-3.5 py-3 flex flex-col justify-between gap-2`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--app-bg)]/85 text-[9px] font-semibold text-[var(--text-main)]">
+                          <span>{previewLang === 'ar' ? 'EN' : 'عربي'}</span>
+                          <Globe size={9} className="text-[var(--primary-text)]" />
+                        </span>
+                        <span className="p-1 rounded border border-[var(--border)] bg-[var(--app-bg)]/85 text-[var(--text-main)]">
+                          {previewTheme === 'dark' ? (
+                            <Sun size={9} className="text-[var(--primary-text)]" />
+                          ) : (
+                            <Moon size={9} className="text-[var(--primary-text)]" />
+                          )}
+                        </span>
+                      </div>
+                      {pVersionBadge && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--app-bg)]/85 text-[8px] font-mono-tabular text-[var(--text-muted)] truncate max-w-[95px]">
+                          <span className="w-1 h-1 rounded-full bg-emerald-500 shrink-0" />
+                          <span className="truncate">{pVersionBadge}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5 text-center">
+                      <div className="w-[128px] h-[47px] mx-auto rounded-lg border border-[var(--border)] bg-[var(--app-bg)]/70 flex items-center justify-center overflow-hidden px-1.5">
+                        {brandingForm.loginLogoDataUrl ? (
+                          <img
+                            src={brandingForm.loginLogoDataUrl}
+                            alt="Login Banner"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <img
+                              src={brandingForm.logoDataUrl || emblemImg}
+                              alt="Emblem"
+                              className="w-7 h-7 rounded object-cover shrink-0"
+                            />
+                            <div className="text-start min-w-0">
+                              <p className="text-[8px] font-bold text-[var(--text-main)] truncate">{pOrgNameAr}</p>
+                              <p className="text-[7px] text-[var(--text-muted)] truncate">{pOrgNameEn}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {pSystemCode && (
+                        <p className="text-[11px] font-extrabold text-[var(--primary-text)] leading-none truncate">
+                          {pSystemCode}
+                        </p>
+                      )}
+                      <p className="text-[8px] font-semibold text-[var(--text-main)] truncate leading-tight">
+                        {pOrgTitleAr}
+                      </p>
+                      <p className="text-[7px] text-[var(--text-muted)] truncate leading-tight">{pOrgTitleEn}</p>
+                    </div>
+
+                    <div className="rounded-xl border border-[var(--border)] bg-[var(--card-bg)]/80 dark:bg-[var(--card-bg)]/50 backdrop-blur-md p-2.5 space-y-1.5 text-start">
+                      <div className="h-5 rounded bg-[var(--app-bg)] border border-[var(--border)] px-2 flex items-center justify-between text-[8px] text-[var(--text-main)]">
+                        <User size={9} className="text-[var(--text-muted)]" />
+                        <span className="font-mono-tabular">admin@archaeology.gov</span>
+                      </div>
+                      <div className="h-5 rounded bg-[var(--app-bg)] border border-[var(--border)] px-2 flex items-center justify-between text-[8px] text-[var(--text-main)]">
+                        <Lock size={9} className="text-[var(--text-muted)]" />
+                        <span>••••••••</span>
+                        <Eye size={9} className="text-[var(--text-muted)]" />
+                      </div>
+                      <div className="flex items-center justify-between text-[7px] text-[var(--text-muted)]">
+                        <span>{previewLang === 'ar' ? 'تذكرني' : 'Remember me'}</span>
+                        <span className="text-[var(--primary-text)] font-semibold">
+                          {previewLang === 'ar' ? 'هل نسيت كلمة المرور؟' : 'Forgot password?'}
+                        </span>
+                      </div>
+                      <div className="h-5 rounded-md border border-[var(--border)] bg-[var(--app-bg)]/90 flex items-center justify-between px-0.5 text-[8px] text-[var(--text-muted)]">
+                        <span className="w-4 h-4 rounded bg-[var(--primary)] text-[var(--primary-fg)] flex items-center justify-center shrink-0">
+                          {previewLang === 'ar' ? <ChevronLeft size={9} /> : <ChevronRight size={9} />}
+                        </span>
+                        <span className="truncate px-1">
+                          {previewLang === 'ar' ? 'اسحب للتحقق الأمني' : 'Slide for verification'}
+                        </span>
+                        <span className="w-3 shrink-0" />
+                      </div>
+                      <div className="h-5 rounded-md bg-[var(--primary)] flex items-center justify-center gap-1 text-[8px] font-bold text-[var(--primary-fg)]">
+                        <ShieldCheck size={9} />
+                        <span>{previewLang === 'ar' ? 'تسجيل الدخول' : 'Sign In'}</span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-[var(--border)] pt-1.5 text-center space-y-0.5 text-[7px] text-[var(--text-muted)]">
+                      <p className="truncate">
+                        {pOrgName} © {new Date().getFullYear()}
+                      </p>
+                      <p className="font-semibold text-[var(--text-main)] truncate">{pRestricted}</p>
+                    </div>
+                  </div>
+
+                  {/* Mini Showcase Area */}
+                  <div className="hidden sm:flex flex-1 relative z-10 flex-col justify-between p-4">
+                    <div className="flex justify-end">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/45 backdrop-blur-md border border-white/15 text-[9px] text-white/95">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#e2c16b]" />
+                        <span className="font-semibold truncate max-w-[120px]">{pOrgNameAr}</span>
+                        <span className="text-white/50">·</span>
+                        <span className="text-white/80 truncate max-w-[120px]">{pOrgNameEn}</span>
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-start max-w-md">
+                      <h5 className="font-display font-extrabold text-lg text-[#e2c16b] drop-shadow truncate">
+                        {pShowcaseTitle}
+                      </h5>
+                      <p className="text-[10px] text-white/90 line-clamp-2 leading-snug drop-shadow">
+                        {pHeadline}
+                      </p>
+                      {pTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {pTags.map((tag, i) => (
+                            <span
+                              key={`${tag}-${i}`}
+                              className="px-2 py-0.5 rounded bg-black/55 border border-white/15 text-[8px] text-white/95"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-6 space-y-4">
             <h3 className="font-display text-base font-bold flex items-center gap-2">
               <Palette size={18} className="text-[var(--primary-text)]" />
@@ -622,6 +905,156 @@ const SettingsAndAuditView: React.FC<SettingsAndAuditViewProps> = ({
                   className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
                 />
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginSystemCodeLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginSystemCode || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginSystemCode: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginVersionBadgeLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginVersionBadge || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginVersionBadge: e.target.value })}
+                  dir="ltr"
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm font-mono-tabular outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginShowcaseTitleArLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginShowcaseTitleAr || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginShowcaseTitleAr: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginShowcaseTitleEnLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginShowcaseTitleEn || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginShowcaseTitleEn: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginShowcaseTagsArLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginShowcaseTagsAr || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginShowcaseTagsAr: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginShowcaseTagsEnLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginShowcaseTagsEn || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginShowcaseTagsEn: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginRestrictedNoticeArLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginRestrictedNoticeAr || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginRestrictedNoticeAr: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginRestrictedNoticeEnLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginRestrictedNoticeEn || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginRestrictedNoticeEn: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginForgotHelpArLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginForgotHelpAr || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginForgotHelpAr: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                  {t(lang, 'loginForgotHelpEnLabel')}
+                </label>
+                <input
+                  type="text"
+                  value={brandingForm.loginForgotHelpEn || ''}
+                  onChange={(e) => setBrandingForm({ ...brandingForm, loginForgotHelpEn: e.target.value })}
+                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+
+              {/* Login Window Transparency Control */}
+              <div className="sm:col-span-2 p-3.5 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-[var(--text-main)]">
+                    {t(lang, 'loginCardOpacityLabel')}
+                  </label>
+                  <span className="font-mono-tabular text-xs font-bold px-2 py-0.5 rounded bg-[var(--primary-soft)] text-[var(--primary-text)]">
+                    {brandingForm.loginCardOpacity ?? 20}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  step={5}
+                  value={brandingForm.loginCardOpacity ?? 20}
+                  onChange={(e) => {
+                    const nextOpacity = Number(e.target.value);
+                    setBrandingForm((prev) => ({ ...prev, loginCardOpacity: nextOpacity }));
+                    setSettings((prev) => ({
+                      ...prev,
+                      branding: {
+                        ...DEFAULT_BRANDING,
+                        ...(prev.branding || {}),
+                        ...brandingForm,
+                        loginCardOpacity: nextOpacity,
+                      },
+                    }));
+                  }}
+                  className="w-full accent-[var(--primary)] cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
+                  <span>{lang === 'ar' ? 'أكثر شفافية (10%)' : 'More Transparent (10%)'}</span>
+                  <span>{lang === 'ar' ? 'الافتراضي (20%)' : 'Default (20%)'}</span>
+                  <span>{lang === 'ar' ? 'معتم بالكامل (100%)' : 'Solid (100%)'}</span>
+                </div>
+              </div>
             </div>
 
             <div className="pt-2">
@@ -671,6 +1104,56 @@ const SettingsAndAuditView: React.FC<SettingsAndAuditViewProps> = ({
                     <RotateCcw size={13} />
                     <span>{t(lang, 'resetDefaultImgBtn')}</span>
                   </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Dedicated 220 x 81.89 px Login Header Logo */}
+            <div className="space-y-2.5 pt-3 border-t border-[var(--border)]">
+              <label className="block text-xs font-semibold text-[var(--text-muted)]">
+                {t(lang, 'loginBannerLogoLabel')}
+              </label>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-3 rounded-xl bg-[var(--app-bg)] border border-[var(--border)]">
+                <div className="w-[220px] h-[81.89px] rounded-xl border border-dashed border-[var(--border)] bg-[var(--card-bg)] flex items-center justify-center overflow-hidden shrink-0 px-2">
+                  {brandingForm.loginLogoDataUrl ? (
+                    <img
+                      src={brandingForm.loginLogoDataUrl}
+                      alt="Login Banner Logo"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <span className="text-[11px] font-mono-tabular text-[var(--text-muted)] text-center">
+                      220 × 81.89 px
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer">
+                    <Upload size={14} />
+                    <span>{t(lang, 'uploadImageBtn')}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleUploadBrandingImage('loginLogoDataUrl', e.target.files?.[0])}
+                    />
+                  </label>
+                  {brandingForm.loginLogoDataUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBrandingForm((prev) => ({ ...prev, loginLogoDataUrl: undefined }));
+                        setSettings((prev) => ({
+                          ...prev,
+                          branding: { ...DEFAULT_BRANDING, ...(prev.branding || {}), loginLogoDataUrl: undefined },
+                        }));
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--border)] text-xs font-medium text-[var(--status-danger-text)] hover:bg-[var(--status-danger-bg)] cursor-pointer"
+                    >
+                      <Trash2 size={13} />
+                      <span>{t(lang, 'deleteLabel')}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

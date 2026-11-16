@@ -18,6 +18,8 @@ import {
   UserCheck,
   Database,
   ShieldCheck,
+  Clock,
+  Crosshair,
 } from 'lucide-react';
 import {
   ARABIC_HEADERS_MAP,
@@ -26,6 +28,7 @@ import {
   Employee,
   Language,
   REVERSE_HEADERS_MAP,
+  ShiftMode,
   SystemSettings,
   Vacation,
   generateId,
@@ -37,6 +40,7 @@ import {
   getEmployeeLeaveSummary,
   getTodayStr,
 } from '../utils/leaveCalculations';
+import { getEffectiveWorkSiteLocations, getShiftScheduleBounds } from '../utils/attendanceCalculations';
 import { AvatarWithFallback, ConfirmDialog, StatusLabel } from './UIPrimitives';
 
 interface EmployeeManagerProps {
@@ -107,6 +111,11 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canManage = currentUser?.permissions.includes('manage_employees') ?? false;
   const currentYear = new Date().getFullYear();
+
+  const effectiveWorkSites = useMemo(
+    () => getEffectiveWorkSiteLocations(settings.attendanceConfig),
+    [settings.attendanceConfig]
+  );
 
   const departments = useMemo(
     () =>
@@ -278,6 +287,23 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             exemptRaw === 'معفى' ||
             exemptRaw === 'exempt';
 
+          const parsedLocation = getVal('location') || existingMatch?.location || '';
+          const matchedSiteObj = effectiveWorkSites.find(
+            (s) => s.name.trim().toLowerCase() === parsedLocation.trim().toLowerCase()
+          );
+          const shiftRaw = getVal('defaultShiftMode').toLowerCase();
+          const parsedShift: ShiftMode | undefined =
+            shiftRaw === 'flexible' || shiftRaw.includes('مرن')
+              ? 'flexible'
+              : shiftRaw === 'standard' || shiftRaw.includes('قياسي')
+              ? 'standard'
+              : existingMatch?.defaultShiftMode;
+          const radiusRaw = Number(getVal('geofenceRadiusOverrideMeters'));
+          const parsedRadius =
+            !isNaN(radiusRaw) && radiusRaw >= 25
+              ? Math.min(5000, Math.round(radiusRaw))
+              : existingMatch?.geofenceRadiusOverrideMeters;
+
           const parsedEmp: Employee = {
             id: empId,
             serialNo: getVal('serialNo') || existingMatch?.serialNo || '',
@@ -290,7 +316,11 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               settings.contractTypes[0]?.name ||
               'عقد محلي',
             hireDate: parseExcelDate(normalized['hireDate']) || existingMatch?.hireDate || getTodayStr(),
-            location: getVal('location') || existingMatch?.location || '',
+            location: matchedSiteObj ? matchedSiteObj.name : parsedLocation,
+            assignedWorkSiteId: matchedSiteObj?.id || existingMatch?.assignedWorkSiteId,
+            allowedWorkSites: existingMatch?.allowedWorkSites,
+            defaultShiftMode: parsedShift,
+            geofenceRadiusOverrideMeters: parsedRadius,
             department: getVal('department') || existingMatch?.department || '',
             directManager: getVal('directManager') || existingMatch?.directManager || '',
             status: getVal('status') || existingMatch?.status || 'Active',
@@ -385,6 +415,17 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         ? 'لا'
         : 'No';
       row[REVERSE_HEADERS_MAP['biometricExemptReason']] = emp.biometricExemptReason || '';
+      row[REVERSE_HEADERS_MAP['defaultShiftMode']] =
+        emp.defaultShiftMode === 'flexible'
+          ? lang === 'ar'
+            ? 'ساعة مرنة'
+            : 'Flexible'
+          : lang === 'ar'
+          ? 'قياسي'
+          : 'Standard';
+      row[REVERSE_HEADERS_MAP['geofenceRadiusOverrideMeters']] = emp.geofenceRadiusOverrideMeters
+        ? String(emp.geofenceRadiusOverrideMeters)
+        : '';
       return row;
     });
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -402,7 +443,7 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       [REVERSE_HEADERS_MAP['jobTitle']]: 'باحث آثار',
       [REVERSE_HEADERS_MAP['contractType']]: settings.contractTypes[0]?.name || 'عقد محلي',
       [REVERSE_HEADERS_MAP['hireDate']]: getTodayStr(),
-      [REVERSE_HEADERS_MAP['location']]: 'طرابلس',
+      [REVERSE_HEADERS_MAP['location']]: effectiveWorkSites[0]?.name || 'ديوان المصلحة - طرابلس',
       [REVERSE_HEADERS_MAP['department']]: 'إدارة التنقيب والبعثات',
       [REVERSE_HEADERS_MAP['directManager']]: 'د. طارق المنصوري',
       [REVERSE_HEADERS_MAP['status']]: 'Active',
@@ -410,6 +451,8 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       [REVERSE_HEADERS_MAP['email']]: 'name@archaeology.gov',
       [REVERSE_HEADERS_MAP['biometricExempt']]: 'لا',
       [REVERSE_HEADERS_MAP['biometricExemptReason']]: '',
+      [REVERSE_HEADERS_MAP['defaultShiftMode']]: 'قياسي',
+      [REVERSE_HEADERS_MAP['geofenceRadiusOverrideMeters']]: '',
     };
     const ws = XLSX.utils.json_to_sheet([sampleRow]);
     const wb = XLSX.utils.book_new();
@@ -419,6 +462,7 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   const handleOpenCreate = () => {
     setIsCreatingNew(true);
+    const defaultSite = effectiveWorkSites[0];
     setEditingEmployee({
       id: generateId(),
       serialNo: String(employees.length + 1),
@@ -427,7 +471,10 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       jobTitle: '',
       contractType: settings.contractTypes[0]?.name || 'عقد محلي',
       hireDate: getTodayStr(),
-      location: '',
+      location: defaultSite?.name || '',
+      assignedWorkSiteId: defaultSite?.id,
+      allowedWorkSites: [],
+      defaultShiftMode: 'standard',
       department: '',
       directManager: '',
       status: 'Active',
@@ -439,7 +486,15 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   const handleOpenEdit = (emp: Employee) => {
     setIsCreatingNew(false);
-    setEditingEmployee({ ...emp });
+    const matchedSite =
+      effectiveWorkSites.find((s) => s.id === emp.assignedWorkSiteId) ||
+      effectiveWorkSites.find((s) => s.name.trim().toLowerCase() === emp.location.trim().toLowerCase());
+    setEditingEmployee({
+      ...emp,
+      assignedWorkSiteId: emp.assignedWorkSiteId || matchedSite?.id,
+      allowedWorkSites: emp.allowedWorkSites || [],
+      defaultShiftMode: emp.defaultShiftMode || 'standard',
+    });
   };
 
   const handleSaveEmployee = (e: React.FormEvent) => {
@@ -461,8 +516,29 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       return;
     }
 
+    const cleanLocation = editingEmployee.location.trim();
+    const matchedSite =
+      effectiveWorkSites.find((s) => s.id === editingEmployee.assignedWorkSiteId) ||
+      effectiveWorkSites.find((s) => s.name.trim().toLowerCase() === cleanLocation.toLowerCase());
+
+    const cleanOverrideRadius =
+      editingEmployee.geofenceRadiusOverrideMeters !== undefined &&
+      !isNaN(Number(editingEmployee.geofenceRadiusOverrideMeters)) &&
+      Number(editingEmployee.geofenceRadiusOverrideMeters) >= 25
+        ? Math.min(5000, Math.round(Number(editingEmployee.geofenceRadiusOverrideMeters)))
+        : undefined;
+
+    const cleanAllowedSites = Array.from<string>(
+      new Set((editingEmployee.allowedWorkSites || []).map((s) => s.trim()).filter(Boolean))
+    ).filter((s) => s.toLowerCase() !== cleanLocation.toLowerCase());
+
     const normalizedEmp: Employee = {
       ...editingEmployee,
+      location: cleanLocation,
+      assignedWorkSiteId: matchedSite?.id,
+      allowedWorkSites: cleanAllowedSites.length > 0 ? cleanAllowedSites : undefined,
+      defaultShiftMode: editingEmployee.defaultShiftMode || 'standard',
+      geofenceRadiusOverrideMeters: cleanOverrideRadius,
       biometricExempt: Boolean(editingEmployee.biometricExempt),
       biometricExemptReason: editingEmployee.biometricExempt
         ? editingEmployee.biometricExemptReason?.trim() || undefined
@@ -739,7 +815,15 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                             <div className="font-semibold text-[var(--text-main)] group-hover:text-[var(--primary-text)] transition-colors">
                               {emp.fullName}
                             </div>
-                            <div className="text-xs text-[var(--text-muted)]">{emp.location || '-'}</div>
+                            <div className="text-xs text-[var(--text-muted)]">
+                              {emp.location || '-'}
+                              {emp.defaultShiftMode === 'flexible'
+                                ? ` · ${t(lang, 'shiftFlexibleLabel')}`
+                                : ''}
+                              {emp.geofenceRadiusOverrideMeters
+                                ? ` · ${emp.geofenceRadiusOverrideMeters}m`
+                                : ''}
+                            </div>
                           </div>
                         </button>
                       </td>
@@ -876,9 +960,33 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                 </div>
                 <div className="space-y-1">
                   <span className="text-[var(--text-muted)] flex items-center gap-1">
-                    <MapPin size={12} /> {t(lang, 'locationCol')}
+                    <MapPin size={12} /> {t(lang, 'assignedWorkSiteLabel')}
                   </span>
                   <p className="font-semibold text-[var(--text-main)]">{viewingEmployee.location || '-'}</p>
+                  {(() => {
+                    const siteObj =
+                      effectiveWorkSites.find((s) => s.id === viewingEmployee.assignedWorkSiteId) ||
+                      effectiveWorkSites.find(
+                        (s) => s.name.trim().toLowerCase() === viewingEmployee.location.trim().toLowerCase()
+                      );
+                    if (!siteObj) return null;
+                    return (
+                      <p className="text-[10px] font-mono-tabular text-[var(--text-muted)]">
+                        {siteObj.lat.toFixed(4)}, {siteObj.lng.toFixed(4)} ·{' '}
+                        {viewingEmployee.geofenceRadiusOverrideMeters ?? siteObj.radiusMeters}m
+                      </p>
+                    );
+                  })()}
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[var(--text-muted)] flex items-center gap-1">
+                    <Clock size={12} /> {t(lang, 'defaultShiftModeLabel')}
+                  </span>
+                  <p className="font-semibold text-[var(--text-main)]">
+                    {viewingEmployee.defaultShiftMode === 'flexible'
+                      ? t(lang, 'shiftFlexibleLabel')
+                      : t(lang, 'shiftStandardLabel')}
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[var(--text-muted)]">{t(lang, 'contractCol')}</span>
@@ -902,6 +1010,16 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     <StatusLabel status={viewingEmployee.status || 'Active'} lang={lang} />
                   </div>
                 </div>
+                {viewingEmployee.allowedWorkSites && viewingEmployee.allowedWorkSites.length > 0 && (
+                  <div className="space-y-1 sm:col-span-3">
+                    <span className="text-[var(--text-muted)] flex items-center gap-1">
+                      <Crosshair size={12} /> {t(lang, 'allowedWorkSitesLabel')}
+                    </span>
+                    <p className="font-medium text-[var(--text-main)]">
+                      {viewingEmployee.allowedWorkSites.join(' · ')}
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-1 sm:col-span-2">
                   <span className="text-[var(--text-muted)] flex items-center gap-1">
                     <ShieldCheck size={12} /> {t(lang, 'biometricStatusCol')}
@@ -1164,18 +1282,6 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
                 <div>
                   <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
-                    {t(lang, 'locationCol')}
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-main)] outline-none focus:border-[var(--primary)]"
-                    value={editingEmployee.location}
-                    onChange={(e) => setEditingEmployee({ ...editingEmployee, location: e.target.value })}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
                     {t(lang, 'directManager')}
                   </label>
                   <input
@@ -1198,7 +1304,7 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div>
                   <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
                     {t(lang, 'email')}
                   </label>
@@ -1210,41 +1316,225 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   />
                 </div>
 
-                <div className="sm:col-span-2 p-3.5 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-2.5">
-                  <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-[var(--text-main)]">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(editingEmployee.biometricExempt)}
-                      onChange={(e) =>
-                        setEditingEmployee({
-                          ...editingEmployee,
-                          biometricExempt: e.target.checked,
-                          biometricExemptUpdatedAt: new Date().toISOString(),
-                          biometricExemptUpdatedBy: currentUser?.name || 'Admin',
-                        })
-                      }
-                      className="rounded accent-[var(--primary)]"
-                    />
-                    <ShieldCheck size={14} className="text-[var(--primary-text)] shrink-0" />
-                    <span>{t(lang, 'biometricExemptToggleLabel')}</span>
-                  </label>
+                {/* Linked Work Site & Attendance Properties Panel */}
+                <div className="sm:col-span-2 p-4 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-3.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[var(--primary-text)] border-b border-[var(--border)] pb-2">
+                    <MapPin size={15} />
+                    <span>{t(lang, 'employeeAttendancePropsTitle')}</span>
+                  </div>
 
-                  {editingEmployee.biometricExempt && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                        {t(lang, 'biometricExemptReasonLabel')} {t(lang, 'optionalLabel')}
+                        {t(lang, 'assignedWorkSiteLabel')}
                       </label>
-                      <input
-                        type="text"
-                        placeholder={t(lang, 'biometricExemptReasonPlaceholder')}
-                        className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-main)] outline-none focus:border-[var(--primary)]"
-                        value={editingEmployee.biometricExemptReason || ''}
-                        onChange={(e) =>
-                          setEditingEmployee({ ...editingEmployee, biometricExemptReason: e.target.value })
+                      <select
+                        value={
+                          effectiveWorkSites.some(
+                            (s) =>
+                              s.id === editingEmployee.assignedWorkSiteId ||
+                              s.name.trim().toLowerCase() === editingEmployee.location.trim().toLowerCase()
+                          )
+                            ? (
+                                effectiveWorkSites.find((s) => s.id === editingEmployee.assignedWorkSiteId) ||
+                                effectiveWorkSites.find(
+                                  (s) =>
+                                    s.name.trim().toLowerCase() === editingEmployee.location.trim().toLowerCase()
+                                )
+                              )?.name || ''
+                            : '__custom__'
                         }
-                      />
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '__custom__') {
+                            setEditingEmployee({
+                              ...editingEmployee,
+                              assignedWorkSiteId: undefined,
+                            });
+                            return;
+                          }
+                          const found = effectiveWorkSites.find((s) => s.name === val);
+                          setEditingEmployee({
+                            ...editingEmployee,
+                            location: val,
+                            assignedWorkSiteId: found?.id,
+                          });
+                        }}
+                        className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs font-medium text-[var(--text-main)] outline-none focus:border-[var(--primary)]"
+                      >
+                        {effectiveWorkSites.map((site) => (
+                          <option key={site.id} value={site.name}>
+                            {site.name} ({site.radiusMeters}m)
+                          </option>
+                        ))}
+                        <option value="__custom__">
+                          {lang === 'ar' ? 'إدخال موقع مخصص يدوياً...' : 'Custom site name...'}
+                        </option>
+                      </select>
+
+                      {!effectiveWorkSites.some(
+                        (s) =>
+                          s.id === editingEmployee.assignedWorkSiteId ||
+                          s.name.trim().toLowerCase() === editingEmployee.location.trim().toLowerCase()
+                      ) && (
+                        <input
+                          type="text"
+                          placeholder={lang === 'ar' ? 'اسم الموقع المخصص...' : 'Custom work site...'}
+                          value={editingEmployee.location}
+                          onChange={(e) =>
+                            setEditingEmployee({
+                              ...editingEmployee,
+                              location: e.target.value,
+                              assignedWorkSiteId: undefined,
+                            })
+                          }
+                          className="mt-2 w-full px-3 py-1.5 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                      )}
+
+                      {(() => {
+                        const matched =
+                          effectiveWorkSites.find((s) => s.id === editingEmployee.assignedWorkSiteId) ||
+                          effectiveWorkSites.find(
+                            (s) => s.name.trim().toLowerCase() === editingEmployee.location.trim().toLowerCase()
+                          );
+                        if (!matched) return null;
+                        return (
+                          <p className="mt-1 text-[10px] font-mono-tabular text-[var(--text-muted)]">
+                            GPS: {matched.lat.toFixed(4)}, {matched.lng.toFixed(4)} · {matched.radiusMeters}m
+                          </p>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'defaultShiftModeLabel')}
+                        </label>
+                        <select
+                          value={editingEmployee.defaultShiftMode || 'standard'}
+                          onChange={(e) =>
+                            setEditingEmployee({
+                              ...editingEmployee,
+                              defaultShiftMode: e.target.value as ShiftMode,
+                            })
+                          }
+                          className="w-full px-2.5 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
+                        >
+                          <option value="standard">
+                            {t(lang, 'shiftStandardLabel')} ({getShiftScheduleBounds('standard', settings.attendanceConfig).start})
+                          </option>
+                          <option value="flexible">
+                            {t(lang, 'shiftFlexibleLabel')} ({getShiftScheduleBounds('flexible', settings.attendanceConfig).start})
+                          </option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'geofenceOverrideLabel')}
+                        </label>
+                        <input
+                          type="number"
+                          min={25}
+                          max={5000}
+                          step={25}
+                          placeholder={lang === 'ar' ? 'افتراضي الموقع' : 'Site default'}
+                          value={editingEmployee.geofenceRadiusOverrideMeters ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEditingEmployee({
+                              ...editingEmployee,
+                              geofenceRadiusOverrideMeters: v ? Number(v) : undefined,
+                            });
+                          }}
+                          className="w-full px-2.5 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs font-mono-tabular outline-none focus:border-[var(--primary)]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {effectiveWorkSites.length > 1 && (
+                    <div className="space-y-1.5 pt-2 border-t border-[var(--border)]">
+                      <label className="block text-[11px] font-medium text-[var(--text-muted)]">
+                        {t(lang, 'allowedWorkSitesLabel')}
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {effectiveWorkSites
+                          .filter(
+                            (s) => s.name.trim().toLowerCase() !== editingEmployee.location.trim().toLowerCase()
+                          )
+                          .map((site) => {
+                            const checked = (editingEmployee.allowedWorkSites || []).includes(site.name);
+                            return (
+                              <label
+                                key={site.id}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] cursor-pointer transition-colors ${
+                                  checked
+                                    ? 'bg-[var(--primary-soft)] border-[var(--primary)] text-[var(--primary-text)] font-semibold'
+                                    : 'bg-[var(--card-bg)] border-[var(--border)] text-[var(--text-muted)]'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    const current = editingEmployee.allowedWorkSites || [];
+                                    const next = e.target.checked
+                                      ? [...current, site.name]
+                                      : current.filter((x) => x !== site.name);
+                                    setEditingEmployee({
+                                      ...editingEmployee,
+                                      allowedWorkSites: next,
+                                    });
+                                  }}
+                                  className="rounded accent-[var(--primary)]"
+                                />
+                                <span>{site.name}</span>
+                              </label>
+                            );
+                          })}
+                      </div>
                     </div>
                   )}
+
+                  <div className="pt-2 border-t border-[var(--border)] space-y-2.5">
+                    <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-[var(--text-main)]">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingEmployee.biometricExempt)}
+                        onChange={(e) =>
+                          setEditingEmployee({
+                            ...editingEmployee,
+                            biometricExempt: e.target.checked,
+                            biometricExemptUpdatedAt: new Date().toISOString(),
+                            biometricExemptUpdatedBy: currentUser?.name || 'Admin',
+                          })
+                        }
+                        className="rounded accent-[var(--primary)]"
+                      />
+                      <ShieldCheck size={14} className="text-[var(--primary-text)] shrink-0" />
+                      <span>{t(lang, 'biometricExemptToggleLabel')}</span>
+                    </label>
+
+                    {editingEmployee.biometricExempt && (
+                      <div>
+                        <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
+                          {t(lang, 'biometricExemptReasonLabel')} {t(lang, 'optionalLabel')}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={t(lang, 'biometricExemptReasonPlaceholder')}
+                          className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-main)] outline-none focus:border-[var(--primary)]"
+                          value={editingEmployee.biometricExemptReason || ''}
+                          onChange={(e) =>
+                            setEditingEmployee({ ...editingEmployee, biometricExemptReason: e.target.value })
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

@@ -108,6 +108,12 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
 
   const [exemptEmpId, setExemptEmpId] = useState<string>(employees[0]?.id || '');
   const [exemptReasonInput, setExemptReasonInput] = useState<string>('');
+  const [propWorkSiteName, setPropWorkSiteName] = useState<string>('');
+  const [propAllowedSites, setPropAllowedSites] = useState<string[]>([]);
+  const [propShiftMode, setPropShiftMode] = useState<ShiftMode>('standard');
+  const [propRadiusOverride, setPropRadiusOverride] = useState<string>('');
+  const [propBiometricExempt, setPropBiometricExempt] = useState<boolean>(false);
+  const [propSearch, setPropSearch] = useState<string>('');
   const [recordSearch, setRecordSearch] = useState('');
 
   useEffect(() => {
@@ -126,6 +132,25 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
     () => employees.filter((e) => Boolean(e.biometricExempt)),
     [employees]
   );
+
+  const selectedPropEmployee = useMemo(
+    () => employees.find((e) => e.id === exemptEmpId) || null,
+    [employees, exemptEmpId]
+  );
+
+  useEffect(() => {
+    if (!selectedPropEmployee) return;
+    setPropWorkSiteName(selectedPropEmployee.location || '');
+    setPropAllowedSites(selectedPropEmployee.allowedWorkSites || []);
+    setPropShiftMode(selectedPropEmployee.defaultShiftMode || 'standard');
+    setPropRadiusOverride(
+      selectedPropEmployee.geofenceRadiusOverrideMeters !== undefined
+        ? String(selectedPropEmployee.geofenceRadiusOverrideMeters)
+        : ''
+    );
+    setPropBiometricExempt(Boolean(selectedPropEmployee.biometricExempt));
+    setExemptReasonInput(selectedPropEmployee.biometricExemptReason || '');
+  }, [selectedPropEmployee]);
 
   // Modal for adding or editing any attendance record field
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
@@ -270,6 +295,7 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
       onToast('error', lang === 'ar' ? 'يوجد موقع عمل آخر بنفس الاسم.' : 'Another work site has this name.');
       return;
     }
+    const renamedSiteObj = effectiveWorkSites.find((loc) => loc.name === original);
     const nextSites = form.approvedWorkSites.map((s) => (s === original ? trimmed : s));
     const nextLocations = effectiveWorkSites.map((loc) =>
       loc.name === original ? { ...loc, name: trimmed, updatedAt: new Date().toISOString() } : loc
@@ -285,6 +311,25 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
       );
     }
 
+    if (setEmployees) {
+      setEmployees((prev) =>
+        prev.map((emp) => {
+          const matchesPrimary =
+            emp.location === original || (renamedSiteObj && emp.assignedWorkSiteId === renamedSiteObj.id);
+          const matchesAllowed = emp.allowedWorkSites?.includes(original);
+          if (!matchesPrimary && !matchesAllowed) return emp;
+          return {
+            ...emp,
+            location: matchesPrimary ? trimmed : emp.location,
+            assignedWorkSiteId: matchesPrimary && renamedSiteObj ? renamedSiteObj.id : emp.assignedWorkSiteId,
+            allowedWorkSites: matchesAllowed
+              ? emp.allowedWorkSites?.map((s) => (s === original ? trimmed : s))
+              : emp.allowedWorkSites,
+          };
+        })
+      );
+    }
+
     onLogAudit(
       lang === 'ar' ? 'تعديل اسم موقع العمل المعتمد' : 'Renamed Approved Work Site',
       `${original} → ${trimmed}`,
@@ -292,7 +337,7 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
     );
     onToast(
       'success',
-      lang === 'ar' ? `تم تعديل موقع العمل إلى "${trimmed}".` : `Work site updated to "${trimmed}".`
+      lang === 'ar' ? `تم تعديل موقع العمل إلى "${trimmed}" ومزامنته مع الموظفين.` : `Work site updated to "${trimmed}".`
     );
     setEditingSite(null);
   };
@@ -457,10 +502,23 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
     }
   };
 
-  const handleAssignBiometricExemption = () => {
+  const handleSaveEmployeeAttendanceProps = () => {
     if (!setEmployees || !exemptEmpId) return;
     const targetEmp = employees.find((e) => e.id === exemptEmpId);
     if (!targetEmp) return;
+
+    const cleanPrimary = propWorkSiteName.trim() || targetEmp.location;
+    const matchedSite = effectiveWorkSites.find(
+      (s) => s.name.trim().toLowerCase() === cleanPrimary.toLowerCase()
+    );
+    const cleanAllowed = Array.from<string>(
+      new Set(propAllowedSites.map((s) => s.trim()).filter(Boolean))
+    ).filter((s) => s.toLowerCase() !== cleanPrimary.toLowerCase());
+    const radiusVal = Number(propRadiusOverride);
+    const cleanRadius =
+      propRadiusOverride.trim() !== '' && !isNaN(radiusVal) && radiusVal >= 25
+        ? Math.min(5000, Math.round(radiusVal))
+        : undefined;
     const cleanReason = exemptReasonInput.trim();
     const nowIso = new Date().toISOString();
 
@@ -469,25 +527,34 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
         emp.id === exemptEmpId
           ? {
               ...emp,
-              biometricExempt: true,
-              biometricExemptReason: cleanReason || emp.biometricExemptReason || undefined,
+              location: cleanPrimary,
+              assignedWorkSiteId: matchedSite?.id,
+              allowedWorkSites: cleanAllowed.length > 0 ? cleanAllowed : undefined,
+              defaultShiftMode: propShiftMode,
+              geofenceRadiusOverrideMeters: cleanRadius,
+              biometricExempt: propBiometricExempt,
+              biometricExemptReason: propBiometricExempt
+                ? cleanReason || emp.biometricExemptReason || undefined
+                : undefined,
               biometricExemptUpdatedAt: nowIso,
               biometricExemptUpdatedBy: currentUserName || 'Admin',
             }
           : emp
       )
     );
-    setExemptReasonInput('');
+
     onLogAudit(
-      lang === 'ar' ? 'إعفاء موظف من البصمة' : 'Exempted Employee from Biometric Check-In',
-      `${targetEmp.fullName} (${targetEmp.adminId})${cleanReason ? ` · ${cleanReason}` : ''}`,
+      lang === 'ar' ? 'تحديث خصائص الحضور وموقع العمل للموظف' : 'Updated Employee Attendance & Site Properties',
+      `${targetEmp.fullName} · ${cleanPrimary} (${propShiftMode}${cleanRadius ? `, ${cleanRadius}m` : ''}${
+        propBiometricExempt ? ', Biometric Exempt' : ''
+      })`,
       'settings'
     );
     onToast(
       'success',
       lang === 'ar'
-        ? `تم منح إعفاء من البصمة للموظف ${targetEmp.fullName}.`
-        : `Granted biometric exemption to ${targetEmp.fullName}.`
+        ? `تم حفظ موقع العمل وخصائص الحضور للموظف ${targetEmp.fullName} ومزامنتها.`
+        : `Saved attendance & work site properties for ${targetEmp.fullName}.`
     );
   };
 
@@ -1101,7 +1168,14 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
                               </span>
                               {siteLoc && (
                                 <span className="text-[10px] font-mono-tabular text-[var(--text-muted)] block">
-                                  {siteLoc.lat.toFixed(4)}, {siteLoc.lng.toFixed(4)} · {siteLoc.radiusMeters}m
+                                  {siteLoc.lat.toFixed(4)}, {siteLoc.lng.toFixed(4)} · {siteLoc.radiusMeters}m ·{' '}
+                                  {employees.filter(
+                                    (e) =>
+                                      e.assignedWorkSiteId === siteLoc.id ||
+                                      e.location.trim().toLowerCase() === site.trim().toLowerCase() ||
+                                      e.allowedWorkSites?.includes(site)
+                                  ).length}{' '}
+                                  {lang === 'ar' ? 'موظف' : 'staff'}
                                 </span>
                               )}
                             </div>
@@ -1465,7 +1539,7 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
         </div>
       </form>
 
-      {/* Biometric Check-In Exemptions Manager ("إعفاء الموظفين من البصمة") */}
+      {/* Employee Work-Site Assignment, Geofence Overrides, Shift Defaults & Biometric Exemptions */}
       {setEmployees && (
         <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
           <div className="p-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-3">
@@ -1475,115 +1549,291 @@ const AttendanceAdminTab: React.FC<AttendanceAdminTabProps> = ({
               </div>
               <div>
                 <h4 className="font-display text-sm font-bold flex items-center gap-2">
-                  <span>{t(lang, 'biometricExemptAdminTitle')}</span>
+                  <span>{t(lang, 'employeeAttendancePropsTitle')}</span>
                   <span className="font-mono-tabular text-xs font-bold text-[var(--primary-text)]">
-                    ({exemptEmployees.length})
+                    ({employees.length})
                   </span>
+                  {exemptEmployees.length > 0 && (
+                    <span className="text-[11px] font-semibold text-[var(--text-muted)]">
+                      · {exemptEmployees.length} {t(lang, 'biometricExemptBadge')}
+                    </span>
+                  )}
                 </h4>
-                <p className="text-xs text-[var(--text-muted)]">{t(lang, 'biometricExemptAdminDesc')}</p>
+                <p className="text-xs text-[var(--text-muted)]">{t(lang, 'employeeAttendancePropsDesc')}</p>
               </div>
             </div>
           </div>
 
           <div className="p-4 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-              <div className="md:col-span-4">
-                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
-                  {t(lang, 'employeeCol')}
-                </label>
-                <select
-                  value={exemptEmpId}
-                  onChange={(e) => setExemptEmpId(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
-                >
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.fullName} — {emp.department}
-                      {emp.biometricExempt ? ` (${t(lang, 'biometricExemptBadge')})` : ''}
+            <div className="p-4 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-3.5">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                <div className="md:col-span-4">
+                  <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                    {t(lang, 'employeeCol')}
+                  </label>
+                  <select
+                    value={exemptEmpId}
+                    onChange={(e) => setExemptEmpId(e.target.value)}
+                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs font-semibold outline-none focus:border-[var(--primary)]"
+                  >
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.fullName} — {emp.department}
+                        {emp.biometricExempt ? ` (${t(lang, 'biometricExemptBadge')})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                    {t(lang, 'assignedWorkSiteLabel')}
+                  </label>
+                  <select
+                    value={propWorkSiteName}
+                    onChange={(e) => setPropWorkSiteName(e.target.value)}
+                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
+                  >
+                    {effectiveWorkSites.map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name} ({s.radiusMeters}m)
+                      </option>
+                    ))}
+                    {propWorkSiteName &&
+                      !effectiveWorkSites.some(
+                        (s) => s.name.trim().toLowerCase() === propWorkSiteName.trim().toLowerCase()
+                      ) && <option value={propWorkSiteName}>{propWorkSiteName}</option>}
+                  </select>
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                    {t(lang, 'defaultShiftModeLabel')}
+                  </label>
+                  <select
+                    value={propShiftMode}
+                    onChange={(e) => setPropShiftMode(e.target.value as ShiftMode)}
+                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
+                  >
+                    <option value="standard">
+                      {t(lang, 'shiftStandardLabel')} ({form.standardStart}–{form.standardEnd})
                     </option>
-                  ))}
-                </select>
+                    <option value="flexible">
+                      {t(lang, 'shiftFlexibleLabel')} ({form.flexibleStart}–{form.flexibleEnd})
+                    </option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                    {t(lang, 'geofenceOverrideLabel')}
+                  </label>
+                  <input
+                    type="number"
+                    min={25}
+                    max={5000}
+                    step={25}
+                    value={propRadiusOverride}
+                    onChange={(e) => setPropRadiusOverride(e.target.value)}
+                    placeholder={lang === 'ar' ? 'افتراضي' : 'Default'}
+                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs font-mono-tabular outline-none focus:border-[var(--primary)]"
+                  />
+                </div>
               </div>
 
-              <div className="md:col-span-5">
-                <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
-                  {t(lang, 'biometricExemptReasonLabel')} {t(lang, 'optionalLabel')}
-                </label>
-                <input
-                  type="text"
-                  value={exemptReasonInput}
-                  onChange={(e) => setExemptReasonInput(e.target.value)}
-                  placeholder={t(lang, 'biometricExemptReasonPlaceholder')}
-                  className="w-full px-3 py-2 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
-                />
-              </div>
+              {/* Additional Allowed Sites & Biometric Exemption Toggle */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-3 border-t border-[var(--border)] items-center">
+                <div className="lg:col-span-5 space-y-1.5">
+                  <span className="block text-[11px] font-medium text-[var(--text-muted)]">
+                    {t(lang, 'allowedWorkSitesLabel')}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {effectiveWorkSites
+                      .filter((s) => s.name.trim().toLowerCase() !== propWorkSiteName.trim().toLowerCase())
+                      .map((site) => {
+                        const checked = propAllowedSites.includes(site.name);
+                        return (
+                          <label
+                            key={site.id}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] cursor-pointer transition-colors ${
+                              checked
+                                ? 'bg-[var(--primary-soft)] border-[var(--primary)] text-[var(--primary-text)] font-semibold'
+                                : 'bg-[var(--card-bg)] border-[var(--border)] text-[var(--text-muted)]'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) =>
+                                setPropAllowedSites((prev) =>
+                                  e.target.checked
+                                    ? [...prev, site.name]
+                                    : prev.filter((item) => item !== site.name)
+                                )
+                              }
+                              className="rounded accent-[var(--primary)]"
+                            />
+                            <span>{site.name}</span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                </div>
 
-              <div className="md:col-span-3">
-                <button
-                  type="button"
-                  onClick={handleAssignBiometricExemption}
-                  disabled={!exemptEmpId}
-                  className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap disabled:opacity-50"
-                >
-                  <ShieldCheck size={14} />
-                  <span>{t(lang, 'biometricExemptAssignBtn')}</span>
-                </button>
+                <div className="lg:col-span-4 space-y-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-[var(--text-main)]">
+                    <input
+                      type="checkbox"
+                      checked={propBiometricExempt}
+                      onChange={(e) => setPropBiometricExempt(e.target.checked)}
+                      className="rounded accent-[var(--primary)]"
+                    />
+                    <ShieldCheck size={14} className="text-[var(--primary-text)] shrink-0" />
+                    <span>{t(lang, 'biometricExemptToggleLabel')}</span>
+                  </label>
+                  {propBiometricExempt && (
+                    <input
+                      type="text"
+                      value={exemptReasonInput}
+                      onChange={(e) => setExemptReasonInput(e.target.value)}
+                      placeholder={t(lang, 'biometricExemptReasonPlaceholder')}
+                      className="w-full px-3 py-1.5 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
+                    />
+                  )}
+                </div>
+
+                <div className="lg:col-span-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveEmployeeAttendanceProps}
+                    disabled={!exemptEmpId}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap disabled:opacity-50"
+                  >
+                    <Save size={14} />
+                    <span>{lang === 'ar' ? 'حفظ خصائص الموظف' : 'Save Employee Props'}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            {exemptEmployees.length > 0 ? (
-              <div className="border border-[var(--border)] rounded-lg overflow-hidden">
-                <table className="w-full text-xs text-start">
-                  <thead className="bg-[var(--surface-subtle)] border-b border-[var(--border)] text-[var(--text-muted)]">
-                    <tr>
-                      <th className="px-3.5 py-2.5 text-start">{t(lang, 'employeeCol')}</th>
-                      <th className="px-3.5 py-2.5 text-start">{t(lang, 'biometricExemptReasonLabel')}</th>
-                      <th className="px-3.5 py-2.5 text-start">
-                        {lang === 'ar' ? 'المعتمد والتاريخ' : 'Authorized By'}
-                      </th>
-                      <th className="px-3.5 py-2.5 text-end">{t(lang, 'actionsCol')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border)]">
-                    {exemptEmployees.map((emp) => (
-                      <tr key={emp.id} className="hover:bg-[var(--surface-subtle)]/40">
-                        <td className="px-3.5 py-2.5">
-                          <div className="font-semibold text-[var(--text-main)]">{emp.fullName}</div>
-                          <div className="text-[11px] text-[var(--text-muted)]">
-                            {emp.adminId} · {emp.department}
-                          </div>
-                        </td>
-                        <td className="px-3.5 py-2.5 text-[var(--text-main)]">
-                          {emp.biometricExemptReason || '-'}
-                        </td>
-                        <td className="px-3.5 py-2.5 text-[11px] text-[var(--text-muted)] font-mono-tabular">
-                          <div>{emp.biometricExemptUpdatedBy || '-'}</div>
-                          {emp.biometricExemptUpdatedAt && (
-                            <div>{emp.biometricExemptUpdatedAt.slice(0, 10)}</div>
-                          )}
-                        </td>
-                        <td className="px-3.5 py-2.5 text-end whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => handleRevokeBiometricExemption(emp)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-text)] text-xs font-semibold hover:opacity-90 cursor-pointer whitespace-nowrap"
-                          >
-                            <UserX size={13} />
-                            <span>{t(lang, 'biometricExemptRevokeBtn')}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Unified Roster Linked Work-Site & Attendance Ledger */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="relative min-w-[220px] flex-1 max-w-sm">
+                <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                <input
+                  type="text"
+                  value={propSearch}
+                  onChange={(e) => setPropSearch(e.target.value)}
+                  placeholder={lang === 'ar' ? 'بحث في الموظفين والمواقع...' : 'Filter employees & sites...'}
+                  className="w-full ps-8 pe-3 py-1.5 bg-[var(--app-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
+                />
               </div>
-            ) : (
-              <p className="text-xs text-[var(--text-muted)] py-1">
-                {lang === 'ar'
-                  ? 'لا يوجد موظفون معفيون من البصمة حالياً.'
-                  : 'No employees are currently exempted from biometric check-in.'}
-              </p>
-            )}
+            </div>
+
+            <div className="border border-[var(--border)] rounded-lg overflow-x-auto max-h-80 overflow-y-auto">
+              <table className="w-full text-xs text-start">
+                <thead className="bg-[var(--surface-subtle)] border-b border-[var(--border)] text-[var(--text-muted)]">
+                  <tr>
+                    <th className="px-3.5 py-2.5 text-start">{t(lang, 'employeeCol')}</th>
+                    <th className="px-3.5 py-2.5 text-start">{t(lang, 'assignedWorkSiteLabel')}</th>
+                    <th className="px-3.5 py-2.5 text-start">{t(lang, 'defaultShiftModeLabel')}</th>
+                    <th className="px-3.5 py-2.5 text-start">{t(lang, 'biometricStatusCol')}</th>
+                    <th className="px-3.5 py-2.5 text-end">{t(lang, 'actionsCol')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {employees
+                    .filter((emp) => {
+                      const q = propSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return (
+                        emp.fullName.toLowerCase().includes(q) ||
+                        emp.adminId.toLowerCase().includes(q) ||
+                        emp.location.toLowerCase().includes(q) ||
+                        emp.department.toLowerCase().includes(q)
+                      );
+                    })
+                    .map((emp) => {
+                      const matchedSite =
+                        effectiveWorkSites.find((s) => s.id === emp.assignedWorkSiteId) ||
+                        effectiveWorkSites.find(
+                          (s) => s.name.trim().toLowerCase() === emp.location.trim().toLowerCase()
+                        );
+                      const effectiveRad = emp.geofenceRadiusOverrideMeters ?? matchedSite?.radiusMeters ?? 250;
+                      const isSelectedRow = emp.id === exemptEmpId;
+                      return (
+                        <tr
+                          key={emp.id}
+                          className={`hover:bg-[var(--surface-subtle)]/40 ${
+                            isSelectedRow ? 'bg-[var(--primary-soft)]/40' : ''
+                          }`}
+                        >
+                          <td className="px-3.5 py-2.5">
+                            <div className="font-semibold text-[var(--text-main)]">{emp.fullName}</div>
+                            <div className="text-[11px] text-[var(--text-muted)]">
+                              {emp.adminId} · {emp.department}
+                            </div>
+                          </td>
+                          <td className="px-3.5 py-2.5">
+                            <div className="font-medium text-[var(--text-main)]">{emp.location || '-'}</div>
+                            <div className="text-[10px] font-mono-tabular text-[var(--text-muted)]">
+                              {effectiveRad}m
+                              {emp.allowedWorkSites && emp.allowedWorkSites.length > 0
+                                ? ` · +${emp.allowedWorkSites.length} ${lang === 'ar' ? 'إضافي' : 'extra'}`
+                                : ''}
+                            </div>
+                          </td>
+                          <td className="px-3.5 py-2.5 font-medium">
+                            {emp.defaultShiftMode === 'flexible'
+                              ? t(lang, 'shiftFlexibleLabel')
+                              : t(lang, 'shiftStandardLabel')}
+                          </td>
+                          <td className="px-3.5 py-2.5">
+                            {emp.biometricExempt ? (
+                              <div>
+                                <span className="font-semibold text-[var(--primary-text)]">
+                                  {t(lang, 'biometricExemptBadge')}
+                                </span>
+                                {emp.biometricExemptReason && (
+                                  <div className="text-[10px] text-[var(--text-muted)]">
+                                    {emp.biometricExemptReason}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[var(--text-muted)]">
+                                {t(lang, 'biometricRequiredBadge')}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3.5 py-2.5 text-end whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setExemptEmpId(emp.id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-semibold hover:border-[var(--primary)] cursor-pointer whitespace-nowrap"
+                              >
+                                <Edit size={12} className="text-[var(--primary-text)]" />
+                                <span>{lang === 'ar' ? 'تعديل الربط' : 'Edit Link'}</span>
+                              </button>
+                              {emp.biometricExempt && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevokeBiometricExemption(emp)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-text)] text-xs font-semibold hover:opacity-90 cursor-pointer whitespace-nowrap"
+                                  title={t(lang, 'biometricExemptRevokeBtn')}
+                                >
+                                  <UserX size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

@@ -1,13 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Check,
   CheckSquare,
+  Copy,
   Edit,
   Eye,
   EyeOff,
   KeyRound,
   Lock,
+  Mail,
   Plus,
+  RefreshCw,
   Search,
+  Send,
   Shield,
   ShieldCheck,
   Square,
@@ -135,6 +140,8 @@ const UserManager: React.FC<UserManagerProps> = ({
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<AppUser | null>(null);
+  const [credentialsModalUser, setCredentialsModalUser] = useState<AppUser | null>(null);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
 
   // Exclusive SuperAdmin Custom Permission Creator state
   const [isAddPermOpen, setIsAddPermOpen] = useState(false);
@@ -144,6 +151,7 @@ const UserManager: React.FC<UserManagerProps> = ({
 
   const [formData, setFormData] = useState<Partial<AppUser>>({
     name: '',
+    username: '',
     email: '',
     password: '',
     role: 'Employee',
@@ -155,6 +163,7 @@ const UserManager: React.FC<UserManagerProps> = ({
   const filteredUsers = users.filter(
     (u) =>
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       translateRole(u.role, lang).toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -172,11 +181,12 @@ const UserManager: React.FC<UserManagerProps> = ({
     setShowPassword(false);
     if (user) {
       setEditingUser(user);
-      setFormData({ ...user, password: '' });
+      setFormData({ ...user, username: user.username || '', password: '' });
     } else {
       setEditingUser(null);
       setFormData({
         name: '',
+        username: '',
         email: '',
         password: '',
         role: 'Employee',
@@ -277,6 +287,71 @@ const UserManager: React.FC<UserManagerProps> = ({
     onToast('info', lang === 'ar' ? 'تمت إزالة الصلاحية المخصصة.' : 'Custom permission removed.');
   };
 
+  const openCredentialsModal = (user: AppUser) => {
+    setCopiedCredentials(false);
+    setCredentialsModalUser(user);
+  };
+
+  const buildCredentialsText = (user: AppUser) => {
+    const portalUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const loginId = user.username?.trim() || user.email;
+    const roleText = translateRole(user.role, lang);
+    if (lang === 'ar') {
+      return [
+        `بيانات الدخول إلى بوابة شؤون الموظفين (${settings?.branding?.orgNameAr || 'مصلحة الآثار'}):`,
+        `- الاسم: ${user.name}`,
+        `- الدور الوظيفي: ${roleText}`,
+        `- اسم المستخدم: ${loginId}`,
+        `- البريد الإلكتروني: ${user.email}`,
+        `- كلمة المرور: ${user.password || '******'}`,
+        portalUrl ? `- رابط البوابة: ${portalUrl}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+    return [
+      `HR Portal Login Credentials (${settings?.branding?.orgNameEn || 'Archaeology HR Portal'}):`,
+      `- Name: ${user.name}`,
+      `- Role: ${roleText}`,
+      `- Username: ${loginId}`,
+      `- Email: ${user.email}`,
+      `- Password: ${user.password || '******'}`,
+      portalUrl ? `- Portal URL: ${portalUrl}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  };
+
+  const handleCopyCredentials = async (user: AppUser) => {
+    const text = buildCredentialsText(user);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedCredentials(true);
+      onToast(
+        'success',
+        lang === 'ar' ? 'تم نسخ بيانات الدخول بنجاح.' : 'Login credentials copied to clipboard.'
+      );
+      onLogAudit(lang === 'ar' ? 'نسخ بيانات دخول مستخدم' : 'Copied User Credentials', user.name, 'user');
+    } catch {
+      onToast('error', lang === 'ar' ? 'تعذر النسخ التلقائي، يرجى النسخ يدوياً.' : 'Unable to access clipboard.');
+    }
+  };
+
+  const handleResetTempPassword = (user: AppUser) => {
+    const randomPwd = `Arc#${Math.floor(1000 + Math.random() * 9000)}`;
+    const updatedUser: AppUser = { ...user, password: randomPwd };
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
+    setCredentialsModalUser(updatedUser);
+    setCopiedCredentials(false);
+    onLogAudit(lang === 'ar' ? 'إعادة تعيين كلمة مرور وإصدار بيانات دخول' : 'Generated Temp Password', user.name, 'user');
+    onToast(
+      'success',
+      lang === 'ar'
+        ? `تم توليد كلمة مرور جديدة للمستخدم ${user.name}.`
+        : `Generated temporary password for ${user.name}.`
+    );
+  };
+
   const handleSave = () => {
     if (!formData.name?.trim() || !formData.email?.trim()) {
       onToast('error', lang === 'ar' ? 'الاسم والبريد الإلكتروني مطلوبان.' : 'Name and email are required.');
@@ -293,6 +368,23 @@ const UserManager: React.FC<UserManagerProps> = ({
       return;
     }
 
+    const derivedUsername =
+      formData.username?.trim() || formData.email.trim().split('@')[0] || formData.name.trim();
+
+    const duplicateUsername = users.some(
+      (u) =>
+        u.id !== editingUser?.id &&
+        u.username &&
+        u.username.trim().toLowerCase() === derivedUsername.toLowerCase()
+    );
+    if (duplicateUsername) {
+      onToast(
+        'error',
+        lang === 'ar' ? 'اسم المستخدم مسجل مسبقاً لحساب آخر.' : 'Username is already taken by another user.'
+      );
+      return;
+    }
+
     // Only SuperAdmin has free control over arbitrary permissions; non-SuperAdmin strictly uses preset role defaults
     const effectivePermissions: string[] = isSuperAdmin
       ? Array.from(new Set<string>(formData.permissions || []))
@@ -305,6 +397,7 @@ const UserManager: React.FC<UserManagerProps> = ({
             ? ({
                 ...u,
                 ...formData,
+                username: derivedUsername,
                 role: chosenRole,
                 permissions: effectivePermissions,
                 linkedEmployeeId: formData.linkedEmployeeId || undefined,
@@ -319,6 +412,7 @@ const UserManager: React.FC<UserManagerProps> = ({
       const newUser: AppUser = {
         id: generateId(),
         name: formData.name.trim(),
+        username: derivedUsername,
         email: formData.email.trim(),
         password: formData.password!,
         role: chosenRole,
@@ -330,6 +424,7 @@ const UserManager: React.FC<UserManagerProps> = ({
       setUsers((prev) => [...prev, newUser]);
       onLogAudit(lang === 'ar' ? 'إنشاء حساب مستخدم' : 'Created User Account', newUser.name, 'user');
       onToast('success', lang === 'ar' ? 'تم إنشاء الحساب بنجاح.' : 'User account created.');
+      openCredentialsModal(newUser);
     }
     setIsModalOpen(false);
   };
@@ -532,7 +627,9 @@ const UserManager: React.FC<UserManagerProps> = ({
                   <AvatarWithFallback src={user.avatar} name={user.name} sizeClass="w-10 h-10" />
                   <div className="min-w-0">
                     <h3 className="font-semibold text-sm text-[var(--text-main)] truncate">{user.name}</h3>
-                    <p className="text-xs font-mono-tabular text-[var(--text-muted)] truncate">{user.email}</p>
+                    <p className="text-xs font-mono-tabular text-[var(--text-muted)] truncate">
+                      {user.username ? `@${user.username} · ` : ''}{user.email}
+                    </p>
                     {linkedEmp && (
                       <p className="text-[11px] text-[var(--text-muted)] truncate">
                         {linkedEmp.fullName} · {linkedEmp.adminId}
@@ -550,24 +647,35 @@ const UserManager: React.FC<UserManagerProps> = ({
                 </span>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {!isProtectedSuper ? (
-                  <button
-                    type="button"
-                    onClick={() => handleOpenModal(user)}
-                    className="flex-1 py-2 text-xs font-medium bg-[var(--surface-subtle)] border border-[var(--border)] rounded-lg hover:bg-[var(--app-bg)] transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Edit size={13} />
-                    <span>
-                      {isSuperAdmin
-                        ? lang === 'ar'
-                          ? 'تعديل الصلاحيات بحرية'
-                          : 'Edit & Permissions'
-                        : lang === 'ar'
-                        ? 'عرض / تعديل الحساب'
-                        : 'View / Edit Account'}
-                    </span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenModal(user)}
+                      className="flex-1 py-2 px-2.5 text-xs font-medium bg-[var(--surface-subtle)] border border-[var(--border)] rounded-lg hover:bg-[var(--app-bg)] transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <Edit size={13} />
+                      <span>
+                        {isSuperAdmin
+                          ? lang === 'ar'
+                            ? 'تعديل الصلاحيات'
+                            : 'Edit & Perms'
+                          : lang === 'ar'
+                          ? 'تعديل'
+                          : 'Edit'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openCredentialsModal(user)}
+                      className="px-2.5 py-2 text-xs font-semibold bg-[var(--primary-soft)] text-[var(--primary-text)] border border-[var(--primary)]/35 rounded-lg hover:bg-[var(--primary)] hover:text-[var(--primary-fg)] transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      title={t(lang, 'sendCredentialsBtn')}
+                    >
+                      <Send size={13} />
+                      <span>{lang === 'ar' ? 'بيانات الدخول' : 'Credentials'}</span>
+                    </button>
+                  </>
                 ) : (
                   <div className="flex-1 py-2 px-3 text-[11px] text-center text-[var(--text-muted)] bg-[var(--surface-subtle)] border border-[var(--border)] rounded-lg inline-flex items-center justify-center gap-1.5">
                     <Lock size={12} />
@@ -610,7 +718,7 @@ const UserManager: React.FC<UserManagerProps> = ({
 
             <div className="p-6 flex-1 overflow-y-auto space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
+                <div>
                   <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
                     {t(lang, 'fullName')} *
                   </label>
@@ -619,6 +727,18 @@ const UserManager: React.FC<UserManagerProps> = ({
                     className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm bg-[var(--app-bg)] text-[var(--text-main)] outline-none focus:border-[var(--primary)]"
                     value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">
+                    {t(lang, 'usernameLabel')}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={lang === 'ar' ? 'مثال: m.mansouri' : 'e.g. m.mansouri'}
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm font-mono-tabular bg-[var(--app-bg)] text-[var(--text-main)] outline-none focus:border-[var(--primary)]"
+                    value={formData.username || ''}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                   />
                 </div>
                 <div>
@@ -806,6 +926,107 @@ const UserManager: React.FC<UserManagerProps> = ({
               >
                 {t(lang, 'save')}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send / Copy Login Credentials Modal */}
+      {credentialsModalUser && (
+        <div className="fixed inset-0 z-[85] bg-black/65 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[var(--card-bg)] border border-[var(--border)] w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <KeyRound size={18} className="text-[var(--primary-text)]" />
+                <h3 className="font-display font-bold text-sm text-[var(--text-main)]">
+                  {t(lang, 'credentialsModalTitle')}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCredentialsModalUser(null)}
+                className="p-1 text-[var(--text-muted)] hover:text-[var(--text-main)] cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <p className="text-[var(--text-muted)]">{t(lang, 'credentialsModalDesc')}</p>
+
+              <div className="p-4 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[var(--text-muted)]">{t(lang, 'fullName')}:</span>
+                  <span className="font-bold text-[var(--text-main)]">{credentialsModalUser.name}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[var(--text-muted)]">{t(lang, 'roleCol')}:</span>
+                  <span className="font-semibold text-[var(--primary-text)]">
+                    {translateRole(credentialsModalUser.role, lang)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--border)]">
+                  <span className="text-[var(--text-muted)]">{t(lang, 'usernameLabel')}:</span>
+                  <span className="font-mono-tabular font-bold text-[var(--text-main)]">
+                    {credentialsModalUser.username || credentialsModalUser.email}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[var(--text-muted)]">{t(lang, 'email')}:</span>
+                  <span className="font-mono-tabular text-[var(--text-main)]">{credentialsModalUser.email}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[var(--text-muted)]">{t(lang, 'passwordLabel')}:</span>
+                  <span className="font-mono-tabular font-bold text-[var(--primary-text)]">
+                    {credentialsModalUser.password || '—'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleCopyCredentials(credentialsModalUser)}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap"
+                >
+                  {copiedCredentials ? <Check size={14} /> : <Copy size={14} />}
+                  <span>
+                    {copiedCredentials
+                      ? lang === 'ar'
+                        ? 'تم النسخ'
+                        : 'Copied'
+                      : t(lang, 'copyCredentialsBtn')}
+                  </span>
+                </button>
+
+                <a
+                  href={`mailto:${encodeURIComponent(credentialsModalUser.email)}?subject=${encodeURIComponent(
+                    lang === 'ar' ? 'بيانات الدخول لبوابة شؤون الموظفين' : 'HR Portal Login Credentials'
+                  )}&body=${encodeURIComponent(buildCredentialsText(credentialsModalUser))}`}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-main)] font-semibold hover:border-[var(--primary)] cursor-pointer whitespace-nowrap"
+                >
+                  <Mail size={14} className="text-[var(--primary-text)]" />
+                  <span>{t(lang, 'sendViaEmailBtn')}</span>
+                </a>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-[var(--border)]">
+                <button
+                  type="button"
+                  onClick={() => handleResetTempPassword(credentialsModalUser)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--primary-text)] hover:underline cursor-pointer"
+                >
+                  <RefreshCw size={12} />
+                  <span>{lang === 'ar' ? 'توليد كلمة مرور مؤقتة جديدة' : 'Generate Temporary Password'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCredentialsModalUser(null)}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--border)] text-xs text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer"
+                >
+                  {t(lang, 'close')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

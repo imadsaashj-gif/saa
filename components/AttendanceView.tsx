@@ -176,7 +176,9 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
   const selectedEmployee = employees.find((e) => e.id === effectiveEmpId) || initialEmp;
 
   const [entryDate, setEntryDate] = useState<string>(getTodayStr());
-  const [shiftMode, setShiftMode] = useState<ShiftMode>('standard');
+  const [shiftMode, setShiftMode] = useState<ShiftMode>(
+    initialEmp?.defaultShiftMode === 'flexible' && flexibleEnabled ? 'flexible' : 'standard'
+  );
   const [checkInTime, setCheckInTime] = useState<string>(getCurrentTimeHHMM());
   const [checkOutTime, setCheckOutTime] = useState<string>('');
   const [workSite, setWorkSite] = useState<string>(initialEmp?.location || 'ديوان المصلحة - طرابلس');
@@ -380,24 +382,97 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
     };
   }, [canManageAttendance, acquireGpsLocation]);
 
+  const primaryAssignedSite = useMemo(() => {
+    if (!selectedEmployee) return effectiveWorkSites[0] || null;
+    if (selectedEmployee.assignedWorkSiteId) {
+      const byId = effectiveWorkSites.find((s) => s.id === selectedEmployee.assignedWorkSiteId);
+      if (byId) return byId;
+    }
+    const empLoc = selectedEmployee.location?.trim().toLowerCase();
+    if (empLoc) {
+      const byName = effectiveWorkSites.find((s) => s.name.trim().toLowerCase() === empLoc);
+      if (byName) return byName;
+    }
+    return effectiveWorkSites[0] || null;
+  }, [selectedEmployee, effectiveWorkSites]);
+
+  const employeeAuthorizedSites = useMemo(() => {
+    const applyOverride = (site: typeof effectiveWorkSites[number]) =>
+      selectedEmployee?.geofenceRadiusOverrideMeters &&
+      selectedEmployee.geofenceRadiusOverrideMeters >= 25
+        ? { ...site, radiusMeters: selectedEmployee.geofenceRadiusOverrideMeters }
+        : site;
+
+    if (!selectedEmployee) {
+      return effectiveWorkSites.map(applyOverride);
+    }
+
+    const chosen: typeof effectiveWorkSites = [];
+    const seenIds = new Set<string>();
+
+    if (selectedEmployee.assignedWorkSiteId) {
+      const byId = effectiveWorkSites.find((s) => s.id === selectedEmployee.assignedWorkSiteId);
+      if (byId && !seenIds.has(byId.id)) {
+        seenIds.add(byId.id);
+        chosen.push(applyOverride(byId));
+      }
+    }
+    const empLoc = selectedEmployee.location?.trim().toLowerCase();
+    if (empLoc) {
+      const byName = effectiveWorkSites.find((s) => s.name.trim().toLowerCase() === empLoc);
+      if (byName && !seenIds.has(byName.id)) {
+        seenIds.add(byName.id);
+        chosen.push(applyOverride(byName));
+      }
+    }
+    (selectedEmployee.allowedWorkSites || []).forEach((siteName) => {
+      const clean = siteName.trim().toLowerCase();
+      const match = effectiveWorkSites.find((s) => s.name.trim().toLowerCase() === clean);
+      if (match && !seenIds.has(match.id)) {
+        seenIds.add(match.id);
+        chosen.push(applyOverride(match));
+      }
+    });
+
+    if (chosen.length > 0) return chosen;
+    return effectiveWorkSites.map(applyOverride);
+  }, [selectedEmployee, effectiveWorkSites]);
+
+  // Keep shiftMode and default workSite synced when the employee or their attendance config changes
+  useEffect(() => {
+    if (!selectedEmployee) return;
+    setShiftMode(
+      selectedEmployee.defaultShiftMode === 'flexible' && flexibleEnabled ? 'flexible' : 'standard'
+    );
+    if (selectedEmployee.location) {
+      setWorkSite(selectedEmployee.location);
+    }
+  }, [
+    selectedEmployee?.id,
+    selectedEmployee?.defaultShiftMode,
+    selectedEmployee?.location,
+    flexibleEnabled,
+  ]);
+
   const nearestMatch = useMemo(() => {
     if (!gpsPosition) return null;
     return resolveNearestWorkSite(
       gpsPosition.lat,
       gpsPosition.lng,
-      effectiveWorkSites,
+      employeeAuthorizedSites,
       gpsPosition.accuracyMeters
     );
-  }, [gpsPosition, effectiveWorkSites]);
+  }, [gpsPosition, employeeAuthorizedSites]);
 
   const fallbackEmployeeSite = useMemo(() => {
-    const empLoc = selectedEmployee?.location?.trim().toLowerCase();
-    if (empLoc) {
-      const found = effectiveWorkSites.find((s) => s.name.trim().toLowerCase() === empLoc);
-      if (found) return found;
+    if (primaryAssignedSite) {
+      return selectedEmployee?.geofenceRadiusOverrideMeters &&
+        selectedEmployee.geofenceRadiusOverrideMeters >= 25
+        ? { ...primaryAssignedSite, radiusMeters: selectedEmployee.geofenceRadiusOverrideMeters }
+        : primaryAssignedSite;
     }
-    return effectiveWorkSites[0] || null;
-  }, [selectedEmployee, effectiveWorkSites]);
+    return employeeAuthorizedSites[0] || null;
+  }, [primaryAssignedSite, selectedEmployee?.geofenceRadiusOverrideMeters, employeeAuthorizedSites]);
 
   const resolvedAutoSite = nearestMatch?.site || fallbackEmployeeSite;
   const resolvedAutoWorkSite =
@@ -431,12 +506,13 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
     return Array.from(sites);
   }, [attCfg?.approvedWorkSites, employees, orgUnits]);
 
-  // Update suggested workSite when switching employee in composer (Supervisor only)
+  // Update suggested workSite & defaultShiftMode when switching employee in composer (Supervisor only)
   const handleSelectComposerEmployee = (nextId: string) => {
     setSelectedEmpId(nextId);
     const emp = employees.find((e) => e.id === nextId);
     if (emp) {
       setWorkSite(emp.location || '');
+      setShiftMode(emp.defaultShiftMode === 'flexible' && flexibleEnabled ? 'flexible' : 'standard');
     }
   };
 
@@ -1938,12 +2014,17 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
                     )}
                   </div>
 
-                  <div className="text-xs">
+                  <div className="text-xs space-y-2">
                     <div className="px-3 py-2 rounded-lg bg-[var(--card-bg)] border border-[var(--border)]">
-                      <span className="block text-[10px] text-[var(--text-muted)]">{t(lang, 'workSiteLabel')}</span>
+                      <span className="block text-[10px] text-[var(--text-muted)]">{t(lang, 'assignedWorkSiteLabel')}</span>
                       <span className="font-semibold text-[var(--text-main)] truncate block">
                         {resolvedAutoWorkSite}
                       </span>
+                      {selectedEmployee?.allowedWorkSites && selectedEmployee.allowedWorkSites.length > 0 && (
+                        <span className="text-[10px] text-[var(--text-muted)] block mt-0.5">
+                          + {t(lang, 'allowedWorkSitesLabel')}: {selectedEmployee.allowedWorkSites.join(' · ')}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -2119,7 +2200,7 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
                 mode="employee-verify"
                 theme={settings.currentTheme}
                 lang={lang}
-                workSites={effectiveWorkSites}
+                workSites={employeeAuthorizedSites}
                 selectedSiteName={resolvedAutoWorkSite}
                 userPosition={gpsPosition}
                 matchedSite={nearestMatch?.site || fallbackEmployeeSite}
