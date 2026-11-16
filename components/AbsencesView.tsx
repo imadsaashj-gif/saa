@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   AlertTriangle,
   Calendar,
   CalendarPlus,
   CheckCircle2,
   ClipboardList,
+  Download,
   Edit,
   Plus,
   Search,
@@ -15,6 +17,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { getVividCardClass } from '../utils/cardColors';
 import {
   AbsenceRecord,
   AbsenceStatus,
@@ -82,6 +85,11 @@ const AbsencesView: React.FC<AbsencesViewProps> = ({
     currentUser?.role === 'SuperAdmin' ||
     currentUser?.role === 'Admin' ||
     perms.includes('manage_absences');
+  const canExportExcel =
+    currentUser?.role === 'SuperAdmin' || perms.includes('export_excel');
+
+  const ledgerRef = useRef<HTMLDivElement | null>(null);
+  const autoDetectedRef = useRef<HTMLDivElement | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<'all' | AbsenceStatus>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | AbsenceType>('all');
@@ -184,6 +192,28 @@ const AbsencesView: React.FC<AbsencesViewProps> = ({
         );
       });
   }, [absenceRecords, statusFilter, typeFilter, searchQuery]);
+
+  const handleExportAbsences = () => {
+    const rows = filteredRecords.map((rec) => {
+      const emp = employees.find((e) => e.id === rec.employeeId);
+      return {
+        [lang === 'ar' ? 'الموظف' : 'Employee']: rec.employeeName,
+        [lang === 'ar' ? 'الرقم الإداري' : 'Admin ID']: emp?.adminId || '',
+        [lang === 'ar' ? 'القسم' : 'Department']: rec.department || emp?.department || '',
+        [lang === 'ar' ? 'تاريخ الغياب' : 'Absence Date']: rec.date,
+        [lang === 'ar' ? 'نوع الغياب' : 'Absence Type']: typeLabel(rec.absenceType),
+        [lang === 'ar' ? 'الحالة' : 'Status']: statusMeta(rec.status).label,
+        [lang === 'ar' ? 'السبب' : 'Reason']: rec.reason || '',
+        [lang === 'ar' ? 'ملاحظات' : 'Notes']: rec.notes || '',
+        [lang === 'ar' ? 'سُجّل بواسطة' : 'Recorded By']: rec.recordedBy,
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Absences');
+    XLSX.writeFile(wb, `absences_records_${getTodayStr()}.xlsx`);
+    onToast('success', lang === 'ar' ? 'تم تصدير كشف الغياب بنجاح.' : 'Absences exported to Excel.');
+  };
 
   const openCreateModal = (prefill?: { empId?: string; date?: string; type?: AbsenceType }) => {
     setEditingAbsence(null);
@@ -485,39 +515,78 @@ const AbsencesView: React.FC<AbsencesViewProps> = ({
             <p className="text-sm text-[var(--text-muted)] mt-0.5">{t(lang, 'absencesDesc')}</p>
           </div>
 
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => openCreateModal()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Plus size={15} />
-              <span>{t(lang, 'recordAbsenceBtn')}</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {canExportExcel && (
+              <button
+                type="button"
+                onClick={handleExportAbsences}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Download size={15} />
+                <span>{t(lang, 'exportExcel')}</span>
+              </button>
+            )}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => openCreateModal()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Plus size={15} />
+                <span>{t(lang, 'recordAbsenceBtn')}</span>
+              </button>
+            )}
+          </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--card-bg)] rounded-xl border border-[var(--border)] px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl px-4 py-3">
           <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-            <UserX size={16} className="text-[var(--primary-text)] shrink-0" />
+            <UserX size={16} className="text-sky-400 shrink-0" />
             <span>{t(lang, 'absencesDesc')}</span>
           </div>
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => openCreateModal()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Plus size={14} />
-              <span>{t(lang, 'recordAbsenceBtn')}</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {canExportExcel && (
+              <button
+                type="button"
+                onClick={handleExportAbsences}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Download size={14} />
+                <span>{t(lang, 'exportExcel')}</span>
+              </button>
+            )}
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => openCreateModal()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Plus size={14} />
+                <span>{t(lang, 'recordAbsenceBtn')}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {/* 4 Summary KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter('all');
+            ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter('all');
+              ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: statusFilter === 'all' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div className="min-w-0">
             <p className="text-xs text-[var(--text-muted)] font-medium">{t(lang, 'totalAbsencesLabel')}</p>
             <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--text-main)] mt-1">
@@ -527,30 +596,60 @@ const AbsencesView: React.FC<AbsencesViewProps> = ({
               {metrics.deductedCount} {lang === 'ar' ? 'محتسب للخصم' : 'deducted'}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--surface-subtle)] text-[var(--primary-text)] shrink-0">
+          <div className="p-2.5 rounded-lg bg-cyan-500/15 text-cyan-400 shrink-0">
             <ClipboardList size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter((prev) => (prev === 'Open' ? 'all' : 'Open'));
+            ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter((prev) => (prev === 'Open' ? 'all' : 'Open'));
+              ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(3, { isActive: statusFilter === 'Open' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div className="min-w-0">
             <p className="text-xs text-[var(--text-muted)] font-medium">{t(lang, 'unexcusedAbsencesLabel')}</p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-danger-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-rose-400 mt-1">
               {metrics.openCount}
             </p>
             <p className="text-[11px] font-mono-tabular text-[var(--text-muted)] mt-0.5 truncate">
               {metrics.unexcusedCount} {lang === 'ar' ? 'بدون عذر / غياب بصمة' : 'unexcused / no check-in'}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-danger-bg)] text-[var(--status-danger-text)] shrink-0">
+          <div className="p-2.5 rounded-lg bg-rose-500/15 text-rose-400 shrink-0">
             <AlertTriangle size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter((prev) => (prev === 'Excused' ? 'all' : 'Excused'));
+            ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter((prev) => (prev === 'Excused' ? 'all' : 'Excused'));
+              ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: statusFilter === 'Excused' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div className="min-w-0">
             <p className="text-xs text-[var(--text-muted)] font-medium">{t(lang, 'excusedAbsencesLabel')}</p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-success-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-emerald-400 mt-1">
               {metrics.excusedCount + metrics.convertedCount}
             </p>
             <p className="text-[11px] font-mono-tabular text-[var(--text-muted)] mt-0.5 truncate">
@@ -558,24 +657,47 @@ const AbsencesView: React.FC<AbsencesViewProps> = ({
               {lang === 'ar' ? 'محول لإجازة' : 'converted'}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)] shrink-0">
+          <div className="p-2.5 rounded-lg bg-emerald-500/15 text-emerald-400 shrink-0">
             <CheckCircle2 size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (canManage && autoDetected.length > 0 && autoDetectedRef.current) {
+              autoDetectedRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } else {
+              setStatusFilter((prev) => (prev === 'Deducted' ? 'all' : 'Deducted'));
+              ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              if (canManage && autoDetected.length > 0 && autoDetectedRef.current) {
+                autoDetectedRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              } else {
+                setStatusFilter((prev) => (prev === 'Deducted' ? 'all' : 'Deducted'));
+                ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }
+          }}
+          className={`${getVividCardClass(2, { isActive: statusFilter === 'Deducted' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div className="min-w-0">
             <p className="text-xs text-[var(--text-muted)] font-medium">
               {lang === 'ar' ? 'أيام غير مسجلة (مكتشفة)' : 'Auto-Detected Unlogged'}
             </p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-warn-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-amber-400 mt-1">
               {autoDetected.length}
             </p>
             <p className="text-[11px] font-mono-tabular text-[var(--text-muted)] mt-0.5 truncate">
               {lang === 'ar' ? 'آخر ١٠ أيام عمل رسمية' : 'Last 10 scheduled workdays'}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)] shrink-0">
+          <div className="p-2.5 rounded-lg bg-amber-500/15 text-amber-400 shrink-0">
             <Sparkles size={20} />
           </div>
         </div>
@@ -583,12 +705,12 @@ const AbsencesView: React.FC<AbsencesViewProps> = ({
 
       {/* Auto-Detected Unlogged Workdays Panel */}
       {canManage && autoDetected.length > 0 && (
-        <div className="rounded-xl border border-[var(--status-warn-border)] bg-[var(--status-warn-bg)] p-4 space-y-3">
+        <div ref={autoDetectedRef} className="rounded-xl border border-[var(--status-warn-border)] bg-[var(--status-warn-bg)]/45 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-sm font-bold text-[var(--status-warn-text)]">
+            <div className="flex items-center gap-2 text-sm font-bold text-orange-400">
               <Sparkles size={16} />
               <span>{t(lang, 'detectedAbsencesTitle')}</span>
-              <span className="font-mono-tabular text-xs px-1.5 py-0.5 rounded bg-[var(--card-bg)] text-[var(--text-main)] border border-[var(--border)]">
+              <span className="font-mono-tabular text-xs px-1.5 py-0.5 rounded bg-[var(--app-bg)] text-[var(--text-main)] border border-[var(--border)]">
                 {autoDetected.length}
               </span>
             </div>
@@ -607,7 +729,7 @@ const AbsencesView: React.FC<AbsencesViewProps> = ({
             {autoDetected.slice(0, 12).map((cand) => (
               <div
                 key={`${cand.employee.id}_${cand.date}`}
-                className="bg-[var(--card-bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 flex items-center justify-between gap-2"
+                className="bg-[var(--app-bg)] border border-[var(--border)] rounded-lg px-3 py-2.5 flex items-center justify-between gap-2"
               >
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-[var(--text-main)] truncate">{cand.employee.fullName}</p>
@@ -638,7 +760,7 @@ const AbsencesView: React.FC<AbsencesViewProps> = ({
       )}
 
       {/* Filter Bar & Ledger Table */}
-      <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <div ref={ledgerRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
         <div className="p-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex flex-wrap p-1 rounded-lg bg-[var(--card-bg)] border border-[var(--border)] gap-1">
             {[

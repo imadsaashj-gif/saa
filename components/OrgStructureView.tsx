@@ -13,6 +13,7 @@ import {
 import { AppUser, DepartmentUnit, Employee, Language, SystemSettings, Vacation, generateId } from '../types';
 import { t } from '../i18n';
 import { getTodayStr } from '../utils/leaveCalculations';
+import { getVividCardClass } from '../utils/cardColors';
 import { AvatarWithFallback, ConfirmDialog, StatusLabel } from './UIPrimitives';
 
 interface OrgStructureViewProps {
@@ -163,11 +164,7 @@ const OrgStructureView: React.FC<OrgStructureViewProps> = ({
           type="button"
           onClick={() => setViewingUnitRoster(unit)}
           title={unit.name}
-          className={`min-w-[160px] max-w-[220px] px-5 py-3.5 rounded-xl border text-center transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--primary)] ${
-            isTopDept
-              ? 'bg-[var(--card-bg)] border-[var(--primary)]/60 hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]/30 shadow-xs'
-              : 'bg-[var(--surface-subtle)] border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--card-bg)]'
-          }`}
+          className="bg-[var(--card-bg)] border border-[var(--border)] hover:border-[var(--primary)] cursor-pointer transition-colors shadow-xs min-w-[160px] max-w-[220px] px-5 py-3.5 rounded-xl text-center focus-visible:outline-2 focus-visible:outline-[var(--primary)]"
         >
           <span
             className={`block text-sm leading-snug text-[var(--text-main)] ${
@@ -256,12 +253,80 @@ const OrgStructureView: React.FC<OrgStructureViewProps> = ({
         </div>
       </div>
 
+      {/* Interactive Summary Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setViewMode('tree')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setViewMode('tree');
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: viewMode === 'tree' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{lang === 'ar' ? 'الوحدات الإدارية' : 'Organizational Units'}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5">{orgUnits.length}</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)] shrink-0">
+            <GitBranch size={19} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setViewMode('list')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setViewMode('list');
+            }
+          }}
+          className={`${getVividCardClass(6, { isActive: viewMode === 'list' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{lang === 'ar' ? 'إجمالي الكادر' : 'Total Workforce'}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5">{employees.length}</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--surface-subtle)] text-[var(--primary-text)] shrink-0">
+            <Users size={19} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setViewMode('list')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setViewMode('list');
+            }
+          }}
+          className={`${getVividCardClass(2)} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{lang === 'ar' ? 'في إجازة اليوم' : 'On Leave Today'}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--status-warn-text)]">
+              {activeLeaveEmpIds.size}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)] shrink-0">
+            <Building2 size={19} />
+          </div>
+        </div>
+      </div>
+
       {/* Org Diagram View (Strictly unit names in boxes linked by hierarchy connector lines) */}
       {viewMode === 'tree' ? (
         <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-x-auto">
           <div className="min-w-full w-max px-6 py-10 sm:px-10 flex flex-col items-center">
             {/* Executive Apex Box (Organization Name only) */}
-            <div className="min-w-[200px] max-w-[280px] px-7 py-4 rounded-xl border-2 border-[var(--primary)] bg-[var(--primary-soft)]/50 text-center">
+            <div className="bg-[var(--card-bg)] border-2 border-[var(--primary)]/50 shadow-sm min-w-[200px] max-w-[280px] px-7 py-4 rounded-xl text-center">
               <h3 className="font-display text-lg font-bold text-[var(--text-main)] leading-snug">
                 {orgName}
               </h3>

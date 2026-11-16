@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Clock,
   Crosshair,
+  Users,
 } from 'lucide-react';
 import {
   ARABIC_HEADERS_MAP,
@@ -41,6 +42,7 @@ import {
   getTodayStr,
 } from '../utils/leaveCalculations';
 import { getEffectiveWorkSiteLocations, getShiftScheduleBounds } from '../utils/attendanceCalculations';
+import { getVividCardClass } from '../utils/cardColors';
 import { AvatarWithFallback, ConfirmDialog, StatusLabel } from './UIPrimitives';
 
 interface EmployeeManagerProps {
@@ -109,8 +111,18 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const [confirmDelete, setConfirmDelete] = useState<{ mode: 'single' | 'bulk'; emp?: Employee } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
   const canManage = currentUser?.permissions.includes('manage_employees') ?? false;
   const currentYear = new Date().getFullYear();
+
+  const staffStats = useMemo(() => {
+    const active = employees.filter((e) => e.status === 'Active').length;
+    const onLeave = employees.filter((e) => e.status === 'On Leave').length;
+    const exempt = employees.filter((e) => Boolean(e.biometricExempt)).length;
+    return { total: employees.length, active, onLeave, exempt };
+  }, [employees]);
+
+  const scrollToTable = () => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const effectiveWorkSites = useMemo(
     () => getEffectiveWorkSiteLocations(settings.attendanceConfig),
@@ -677,6 +689,123 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         </div>
       </div>
 
+      {/* Interactive Staff Summary KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter('all');
+            setBiometricFilter('all');
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter('all');
+              setBiometricFilter('all');
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: statusFilter === 'all' && biometricFilter === 'all' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{lang === 'ar' ? 'إجمالي الموظفين' : 'Total Staff'}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5">{staffStats.total}</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)] shrink-0">
+            <Users size={19} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setBiometricFilter('all');
+            setStatusFilter((prev) => (prev === 'Active' ? 'all' : 'Active'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setBiometricFilter('all');
+              setStatusFilter((prev) => (prev === 'Active' ? 'all' : 'Active'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: statusFilter === 'Active' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{lang === 'ar' ? 'على رأس العمل' : 'Active'}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--status-success-text)]">
+              {staffStats.active}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)] shrink-0">
+            <UserCheck size={19} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setBiometricFilter('all');
+            setStatusFilter((prev) => (prev === 'On Leave' ? 'all' : 'On Leave'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setBiometricFilter('all');
+              setStatusFilter((prev) => (prev === 'On Leave' ? 'all' : 'On Leave'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(2, { isActive: statusFilter === 'On Leave' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{lang === 'ar' ? 'في إجازة' : 'On Leave'}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--status-warn-text)]">
+              {staffStats.onLeave}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)] shrink-0">
+            <Clock size={19} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter('all');
+            setBiometricFilter((prev) => (prev === 'exempt' ? 'all' : 'exempt'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter('all');
+              setBiometricFilter((prev) => (prev === 'exempt' ? 'all' : 'exempt'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(9, { isActive: biometricFilter === 'exempt' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{t(lang, 'biometricExemptBadge')}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--primary-text)]">
+              {staffStats.exempt}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--surface-subtle)] text-[var(--primary-text)] shrink-0">
+            <ShieldCheck size={19} />
+          </div>
+        </div>
+      </div>
+
       {/* Filters Toolbar */}
       <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[220px]">
@@ -755,7 +884,7 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       </div>
 
       {/* Employees Table */}
-      <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <div ref={tableRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
         {filteredEmployees.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-start">

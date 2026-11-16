@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   AlertTriangle,
   Calendar,
@@ -6,12 +7,14 @@ import {
   CheckCircle2,
   Clock,
   DoorOpen,
+  Download,
   Search,
   ShieldAlert,
   ShieldCheck,
   X,
   XCircle,
 } from 'lucide-react';
+import { getVividCardClass } from '../utils/cardColors';
 import {
   AppUser,
   AttendanceRecord,
@@ -72,6 +75,9 @@ const EmployeeViolationsView: React.FC<EmployeeViolationsViewProps> = ({
   embedded = false,
 }) => {
   const canApprove = Boolean(currentUser?.permissions.includes('manage_violations'));
+  const canExportExcel =
+    currentUser?.role === 'SuperAdmin' || Boolean(currentUser?.permissions.includes('export_excel'));
+  const queueRef = useRef<HTMLDivElement | null>(null);
 
   const [activeTab, setActiveTab] = useState<ViolationsTab>('pending');
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,6 +133,36 @@ const EmployeeViolationsView: React.FC<EmployeeViolationsViewProps> = ({
       );
     });
   }, [violationRows, activeTab, searchQuery]);
+
+  const handleExportViolations = () => {
+    const rows = filteredRows.map(({ record, employee, synced }) => ({
+      [lang === 'ar' ? 'الموظف' : 'Employee']: record.employeeName,
+      [lang === 'ar' ? 'الرقم الإداري' : 'Admin ID']: employee?.adminId || '',
+      [lang === 'ar' ? 'القسم' : 'Department']: employee?.department || '',
+      [lang === 'ar' ? 'التاريخ' : 'Date']: record.date,
+      [lang === 'ar' ? 'موقع العمل' : 'Work Site']: record.workSite,
+      [lang === 'ar' ? 'بوابة الدخول' : 'Entry Gate']: record.entryLocation,
+      [lang === 'ar' ? 'بوابة الخروج' : 'Exit Gate']: record.exitLocation || '',
+      [lang === 'ar' ? 'وقت الحضور' : 'Check-In']: record.checkInTime,
+      [lang === 'ar' ? 'وقت الانصراف' : 'Check-Out']: record.checkOutTime || '',
+      [lang === 'ar' ? 'التأخير (دقيقة)' : 'Late (min)']: record.lateMinutes,
+      [lang === 'ar' ? 'الخروج المبكر (دقيقة)' : 'Early Exit (min)']: record.earlyExitMinutes,
+      [lang === 'ar' ? 'نوع المخالفة' : 'Violation Type']: record.violationType,
+      [lang === 'ar' ? 'نوع التصحيح' : 'Rectification']: synced.linkedExitPermit
+        ? synced.linkedExitPermit.reasonType
+        : synced.linkedLeave
+        ? translateVacationType(synced.linkedLeave.type, lang)
+        : '-',
+      [lang === 'ar' ? 'الحالة' : 'Status']: synced.status,
+      [lang === 'ar' ? 'تمت المراجعة بواسطة' : 'Reviewed By']: record.reviewedBy || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Violations');
+    const todayStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `attendance_violations_${todayStr}.xlsx`);
+    onToast('success', lang === 'ar' ? 'تم تصدير كشف المخالفات بنجاح.' : 'Violations exported to Excel.');
+  };
 
   const handleDecision = (
     record: AttendanceRecord,
@@ -227,7 +263,17 @@ const EmployeeViolationsView: React.FC<EmployeeViolationsViewProps> = ({
             <p className="text-sm text-[var(--text-muted)] mt-0.5">{t(lang, 'violationsPageDesc')}</p>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-mono-tabular">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
+            {canExportExcel && (
+              <button
+                type="button"
+                onClick={handleExportViolations}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0 font-sans"
+              >
+                <Download size={15} />
+                <span>{t(lang, 'exportExcel')}</span>
+              </button>
+            )}
             <div className="px-3 py-1.5 rounded-lg bg-[var(--card-bg)] border border-[var(--border)]">
               <span className="text-[var(--text-muted)]">
                 {lang === 'ar' ? 'طلبات بانتظار الاعتماد:' : 'Pending Approval:'}
@@ -237,81 +283,153 @@ const EmployeeViolationsView: React.FC<EmployeeViolationsViewProps> = ({
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--card-bg)] rounded-xl border border-[var(--border)] px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--card-bg)] border border-[var(--border)] rounded-xl px-4 py-3">
           <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-            <ShieldAlert size={16} className="text-[var(--primary-text)] shrink-0" />
+            <ShieldAlert size={16} className="text-sky-400 shrink-0" />
             <span>{t(lang, 'violationsPageDesc')}</span>
           </div>
-          <div className="px-3 py-1 rounded-lg bg-[var(--app-bg)] border border-[var(--border)] text-xs font-mono-tabular">
-            <span className="text-[var(--text-muted)]">
-              {lang === 'ar' ? 'طلبات بانتظار الاعتماد:' : 'Pending Approval:'}
-            </span>{' '}
-            <strong className="text-[var(--primary-text)]">{counts.pending}</strong>
+          <div className="flex flex-wrap items-center gap-2">
+            {canExportExcel && (
+              <button
+                type="button"
+                onClick={handleExportViolations}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--app-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Download size={14} />
+                <span>{t(lang, 'exportExcel')}</span>
+              </button>
+            )}
+            <div className="px-3 py-1 rounded-lg bg-[var(--app-bg)] border border-[var(--border)] text-xs font-mono-tabular">
+              <span className="text-[var(--text-muted)]">
+                {lang === 'ar' ? 'طلبات بانتظار الاعتماد:' : 'Pending Approval:'}
+              </span>{' '}
+              <strong className="text-[var(--primary-text)]">{counts.pending}</strong>
+            </div>
           </div>
         </div>
       )}
 
       {/* 4 Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setActiveTab('pending');
+            queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setActiveTab('pending');
+              queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(2, { isActive: activeTab === 'pending' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div>
             <p className="text-xs text-[var(--text-muted)] font-medium">
               {lang === 'ar' ? 'طلبات بانتظار الاعتماد' : 'Pending Requests'}
             </p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-warn-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-amber-400 mt-1">
               {counts.pending}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)]">
+          <div className="p-2.5 rounded-lg bg-amber-500/15 text-amber-400">
             <Clock size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setActiveTab((prev) => (prev === 'resolved' ? 'all' : 'resolved'));
+            queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setActiveTab((prev) => (prev === 'resolved' ? 'all' : 'resolved'));
+              queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: activeTab === 'resolved' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div>
             <p className="text-xs text-[var(--text-muted)] font-medium">
               {lang === 'ar' ? 'تصحيحات معتمدة' : 'Approved Rectifications'}
             </p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-success-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-emerald-400 mt-1">
               {counts.resolved}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)]">
+          <div className="p-2.5 rounded-lg bg-emerald-500/15 text-emerald-400">
             <CheckCircle2 size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setActiveTab((prev) => (prev === 'rejected' ? 'all' : 'rejected'));
+            queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setActiveTab((prev) => (prev === 'rejected' ? 'all' : 'rejected'));
+              queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(3, { isActive: activeTab === 'rejected' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div>
             <p className="text-xs text-[var(--text-muted)] font-medium">
               {lang === 'ar' ? 'تصحيحات مرفوضة' : 'Rejected Requests'}
             </p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-danger-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-rose-400 mt-1">
               {counts.rejected}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]">
+          <div className="p-2.5 rounded-lg bg-rose-500/15 text-rose-400">
             <XCircle size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setActiveTab('all');
+            queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setActiveTab('all');
+              queueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: activeTab === 'all' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div>
             <p className="text-xs text-[var(--text-muted)] font-medium">
               {lang === 'ar' ? 'إنذارات بانتظار رد الموظف' : 'Active Employee Warnings'}
             </p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--primary-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-cyan-400 mt-1">
               {counts.warningsOnly}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+          <div className="p-2.5 rounded-lg bg-cyan-500/15 text-cyan-400">
             <AlertTriangle size={20} />
           </div>
         </div>
       </div>
 
       {/* Filter Toolbar & Rectification Queue Table */}
-      <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <div ref={queueRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
         <div className="p-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex flex-wrap p-1 rounded-lg bg-[var(--card-bg)] border border-[var(--border)] gap-1">
             {[

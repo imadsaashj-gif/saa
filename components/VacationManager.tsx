@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Calendar as CalendarIcon,
@@ -40,6 +40,7 @@ import {
   getEmployeeLeaveSummary,
   getTodayStr,
 } from '../utils/leaveCalculations';
+import { getVividCardClass } from '../utils/cardColors';
 import { AvatarWithFallback, ConfirmDialog, StatusLabel } from './UIPrimitives';
 import { emblemImg } from '../assets';
 
@@ -327,6 +328,9 @@ const VacationManager: React.FC<VacationManagerProps> = ({
   const [confirmDeleteVac, setConfirmDeleteVac] = useState<Vacation | null>(null);
 
   const canManage = currentUser?.permissions.includes('manage_vacations') ?? false;
+  const canExportExcel =
+    currentUser?.role === 'SuperAdmin' || Boolean(currentUser?.permissions.includes('export_excel'));
+  const tableRef = useRef<HTMLDivElement | null>(null);
   const canApproveExceptions =
     currentUser?.role === 'SuperAdmin' ||
     currentUser?.role === 'Admin' ||
@@ -941,14 +945,16 @@ const VacationManager: React.FC<VacationManagerProps> = ({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleExport}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Download size={15} />
-              <span>{t(lang, 'exportExcel')}</span>
-            </button>
+            {canExportExcel && (
+              <button
+                type="button"
+                onClick={handleExport}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Download size={15} />
+                <span>{t(lang, 'exportExcel')}</span>
+              </button>
+            )}
 
             {(canManage || allowSelfServiceActions) && (
               <button
@@ -970,14 +976,16 @@ const VacationManager: React.FC<VacationManagerProps> = ({
               <p className="text-xs text-[var(--text-muted)]">{t(lang, 'vacationsDesc')}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExport}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Download size={14} />
-                <span>{t(lang, 'exportExcel')}</span>
-              </button>
+              {canExportExcel && (
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Download size={14} />
+                  <span>{t(lang, 'exportExcel')}</span>
+                </button>
+              )}
               {(canManage || allowSelfServiceActions) && (
                 <button
                   type="button"
@@ -991,6 +999,46 @@ const VacationManager: React.FC<VacationManagerProps> = ({
             </div>
           </div>
         )
+      )}
+
+      {/* Interactive Status KPI Cards */}
+      {viewMode === 'list' && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { id: 'all' as const, label: lang === 'ar' ? 'إجمالي الطلبات' : 'All Requests', count: statusCounts.all, paletteIdx: 0, textCls: 'text-cyan-400', badgeCls: 'bg-cyan-500/15 text-cyan-400', Icon: FileText },
+            { id: 'Pending' as const, label: lang === 'ar' ? 'قيد الانتظار' : 'Pending', count: statusCounts.Pending, paletteIdx: 2, textCls: 'text-amber-400', badgeCls: 'bg-amber-500/15 text-amber-400', Icon: Clock },
+            { id: 'Approved' as const, label: lang === 'ar' ? 'معتمدة' : 'Approved', count: statusCounts.Approved, paletteIdx: 1, textCls: 'text-emerald-400', badgeCls: 'bg-emerald-500/15 text-emerald-400', Icon: CheckCircle2 },
+            { id: 'Returned' as const, label: lang === 'ar' ? 'مُعادة للتعديل' : 'Returned', count: statusCounts.Returned, paletteIdx: 9, textCls: 'text-fuchsia-400', badgeCls: 'bg-fuchsia-500/15 text-fuchsia-400', Icon: RotateCcw },
+          ].map((kpi) => (
+            <div
+              key={kpi.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setStatusFilter(kpi.id === 'all' ? 'all' : statusFilter === kpi.id ? 'all' : kpi.id);
+                tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setStatusFilter(kpi.id === 'all' ? 'all' : statusFilter === kpi.id ? 'all' : kpi.id);
+                  tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+              }}
+              className={`${getVividCardClass(kpi.paletteIdx, { isActive: statusFilter === kpi.id })} p-4 rounded-xl flex items-center justify-between gap-2`}
+            >
+              <div>
+                <div className="text-xs text-[var(--text-muted)]">{kpi.label}</div>
+                <div className={`font-display text-2xl font-bold font-mono-tabular mt-0.5 ${kpi.textCls}`}>
+                  {kpi.count}
+                </div>
+              </div>
+              <div className={`p-2 rounded-lg ${kpi.badgeCls}`}>
+                <kpi.Icon size={18} />
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Filter & Search Bar */}
@@ -1041,7 +1089,7 @@ const VacationManager: React.FC<VacationManagerProps> = ({
 
       {/* Substitute Exception Requests Review Strip */}
       {viewMode === 'list' && visibleExceptionAlerts.length > 0 && (
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--status-warn-border)] overflow-hidden">
+        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
           <div className="px-4 py-3 bg-[var(--status-warn-bg)]/40 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-bold text-[var(--text-main)]">
               <ShieldCheck size={16} className="text-[var(--primary-text)]" />
@@ -1145,7 +1193,7 @@ const VacationManager: React.FC<VacationManagerProps> = ({
           lang={lang}
         />
       ) : (
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+        <div ref={tableRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-start">
               <thead className="bg-[var(--surface-subtle)] border-b border-[var(--border)] text-xs text-[var(--text-muted)]">

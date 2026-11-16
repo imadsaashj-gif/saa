@@ -59,6 +59,7 @@ import {
   getEmployeeMonthlyExitUsage,
   getTodayStr,
 } from '../utils/leaveCalculations';
+import { getVividCardClass } from '../utils/cardColors';
 import {
   computeAttendanceMetrics,
   evaluateAttendanceEntry,
@@ -406,32 +407,44 @@ const Dashboard: React.FC<DashboardProps> = ({
       {canViewEmployees || canViewVacations ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {canViewEmployees ? (
-            <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('org', 'employees')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigate('org', 'employees');
+                }
+              }}
+              className={`${getVividCardClass(0)} p-5 rounded-xl flex items-center justify-between`}
+            >
               <div className="space-y-1">
                 <p className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'totalEmployees')}</p>
                 <p className="font-display text-3xl font-bold tabular-nums text-[var(--text-main)]">
                   {employees.length}
                 </p>
-                {canViewOrg ? (
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('org', 'departments')}
-                    className="text-xs text-[var(--text-muted)] hover:text-[var(--primary-text)] tabular-nums cursor-pointer"
-                  >
-                    {orgUnits.length || departmentsSummary.length} {t(lang, 'departmentsCount')}
-                  </button>
-                ) : (
-                  <p className="text-xs text-[var(--text-muted)] tabular-nums">
-                    {orgUnits.length || departmentsSummary.length} {t(lang, 'departmentsCount')}
-                  </p>
-                )}
+                <p className="text-xs text-[var(--primary-text)] tabular-nums font-medium">
+                  {orgUnits.length || departmentsSummary.length} {t(lang, 'departmentsCount')}
+                </p>
               </div>
-              <div className="p-3 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+              <div className="p-3 rounded-lg bg-cyan-500/15 text-cyan-400">
                 <Users size={22} />
               </div>
             </div>
           ) : (
-            <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('my_requests', 'leave')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigate('my_requests', 'leave');
+                }
+              }}
+              className={`${getVividCardClass(0)} p-5 rounded-xl flex items-center justify-between`}
+            >
               <div className="space-y-1">
                 <p className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'remainingDays')}</p>
                 <p className="font-display text-3xl font-bold tabular-nums text-[var(--text-main)]">
@@ -441,14 +454,25 @@ const Dashboard: React.FC<DashboardProps> = ({
                   / {myLeaveSummary?.annualLimit ?? 24} {t(lang, 'workDays')}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+              <div className="p-3 rounded-lg bg-cyan-500/15 text-cyan-400">
                 <Calendar size={22} />
               </div>
             </div>
           )}
 
           {canViewEmployees ? (
-            <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('org', 'employees')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigate('org', 'employees');
+                }
+              }}
+              className={`${getVividCardClass(1)} p-5 rounded-xl flex items-center justify-between`}
+            >
               <div className="space-y-1">
                 <p className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'activeStaff')}</p>
                 <p className="font-display text-3xl font-bold tabular-nums text-[var(--text-main)]">
@@ -459,12 +483,23 @@ const Dashboard: React.FC<DashboardProps> = ({
                   {lang === 'ar' ? 'نسبة التواجد' : 'availability'}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)]">
+              <div className="p-3 rounded-lg bg-emerald-500/15 text-emerald-400">
                 <CheckCircle2 size={22} />
               </div>
             </div>
           ) : (
-            <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('my_requests', 'attendance')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigate('my_requests', 'attendance');
+                }
+              }}
+              className={`${getVividCardClass(1)} p-5 rounded-xl flex items-center justify-between`}
+            >
               <div className="space-y-1">
                 <p className="text-xs font-medium text-[var(--text-muted)]">
                   {t(lang, 'attendanceComplianceRateLabel')}
@@ -476,13 +511,24 @@ const Dashboard: React.FC<DashboardProps> = ({
                   +{formatAttendanceDuration(attMetrics.totalOvertimeMinutes, lang)} {t(lang, 'overtimeCol')}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)]">
+              <div className="p-3 rounded-lg bg-emerald-500/15 text-emerald-400">
                 <CheckCircle2 size={22} />
               </div>
             </div>
           )}
 
-          <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate(canViewVacations ? 'requests' : 'my_requests', canViewVacations ? 'leaves' : 'leave')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate(canViewVacations ? 'requests' : 'my_requests', canViewVacations ? 'leaves' : 'leave');
+              }
+            }}
+            className={`${getVividCardClass(2)} p-5 rounded-xl flex items-center justify-between`}
+          >
             <div className="space-y-1">
               <p className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'onLeaveToday')}</p>
               <p className="font-display text-3xl font-bold tabular-nums text-[var(--text-main)]">
@@ -496,45 +542,52 @@ const Dashboard: React.FC<DashboardProps> = ({
                   : 'Scoped view'}
               </p>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)]">
+            <div className="p-3 rounded-lg bg-amber-500/15 text-amber-400">
               <Plane size={22} />
             </div>
           </div>
 
-          <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate(canViewVacations ? 'requests' : 'my_requests', canViewVacations ? 'leaves' : 'exit')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate(canViewVacations ? 'requests' : 'my_requests', canViewVacations ? 'leaves' : 'exit');
+              }
+            }}
+            className={`${getVividCardClass(3)} p-5 rounded-xl flex items-center justify-between`}
+          >
             <div className="space-y-1">
               <p className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'pendingRequests')}</p>
               <p className="font-display text-3xl font-bold tabular-nums text-[var(--text-main)]">
                 {canViewVacations ? totalPendingRequests : myPendingCount}
               </p>
-              {canViewVacations ? (
-                <button
-                  type="button"
-                  onClick={() => onNavigate('requests', 'leaves')}
-                  className="text-xs font-medium text-[var(--primary-text)] hover:underline inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <span>{t(lang, 'viewAllVacations')}</span>
-                  <ArrowUpRight size={12} />
-                </button>
-              ) : canViewMyRequests ? (
-                <button
-                  type="button"
-                  onClick={() => onNavigate('my_requests')}
-                  className="text-xs font-medium text-[var(--primary-text)] hover:underline inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <span>{t(lang, 'navMyRequests')}</span>
-                  <ArrowUpRight size={12} />
-                </button>
-              ) : null}
+              <span className="text-xs font-medium text-rose-400 inline-flex items-center gap-1">
+                <span>{canViewVacations ? t(lang, 'viewAllVacations') : t(lang, 'navMyRequests')}</span>
+                <ArrowUpRight size={12} />
+              </span>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+            <div className="p-3 rounded-lg bg-rose-500/15 text-rose-400">
               <Hourglass size={22} />
             </div>
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate('my_requests', 'leave')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate('my_requests', 'leave');
+              }
+            }}
+            className={`${getVividCardClass(0)} p-5 rounded-xl flex items-center justify-between`}
+          >
             <div className="space-y-1">
               <p className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'remainingDays')}</p>
               <p className="font-display text-3xl font-bold tabular-nums text-[var(--text-main)]">
@@ -545,12 +598,23 @@ const Dashboard: React.FC<DashboardProps> = ({
                 {lang === 'ar' ? 'مستخدم' : 'used'})
               </p>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+            <div className="p-3 rounded-lg bg-cyan-500/15 text-cyan-400">
               <Calendar size={22} />
             </div>
           </div>
 
-          <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate('my_requests', 'exit')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate('my_requests', 'exit');
+              }
+            }}
+            className={`${getVividCardClass(1)} p-5 rounded-xl flex items-center justify-between`}
+          >
             <div className="space-y-1">
               <p className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'exitMonthlyRemainingLabel')}</p>
               <p className="font-display text-2xl font-bold tabular-nums text-[var(--text-main)]">
@@ -558,12 +622,23 @@ const Dashboard: React.FC<DashboardProps> = ({
               </p>
               <p className="text-xs text-[var(--text-muted)]">{t(lang, 'exitMonthlyQuotaLabel')}</p>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--surface-subtle)] text-[var(--primary-text)]">
+            <div className="p-3 rounded-lg bg-emerald-500/15 text-emerald-400">
               <DoorOpen size={22} />
             </div>
           </div>
 
-          <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate('my_requests', 'attendance')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate('my_requests', 'attendance');
+              }
+            }}
+            className={`${getVividCardClass(2)} p-5 rounded-xl flex items-center justify-between`}
+          >
             <div className="space-y-1">
               <p className="text-xs font-medium text-[var(--text-muted)]">
                 {t(lang, 'attendanceComplianceRateLabel')}
@@ -575,12 +650,23 @@ const Dashboard: React.FC<DashboardProps> = ({
                 {t(lang, 'overtimeCol')}: +{formatAttendanceDuration(attMetrics.totalOvertimeMinutes, lang)}
               </p>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)]">
+            <div className="p-3 rounded-lg bg-amber-500/15 text-amber-400">
               <CheckCircle2 size={22} />
             </div>
           </div>
 
-          <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] flex items-center justify-between">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate('my_requests', 'attendance')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate('my_requests', 'attendance');
+              }
+            }}
+            className={`${getVividCardClass(3)} p-5 rounded-xl flex items-center justify-between`}
+          >
             <div className="space-y-1">
               <p className="text-xs font-medium text-[var(--text-muted)]">
                 {lang === 'ar' ? 'الإنذارات والطلبات المعلقة' : 'Warnings & Pending Requests'}
@@ -588,18 +674,12 @@ const Dashboard: React.FC<DashboardProps> = ({
               <p className="font-display text-3xl font-bold tabular-nums text-[var(--status-warn-text)]">
                 {attMetrics.unrectifiedWarningsCount + myPendingCount}
               </p>
-              {canViewMyRequests && (
-                <button
-                  type="button"
-                  onClick={() => onNavigate('my_requests')}
-                  className="text-xs font-medium text-[var(--primary-text)] hover:underline inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <span>{t(lang, 'navMyRequests')}</span>
-                  <ArrowUpRight size={12} />
-                </button>
-              )}
+              <span className="text-xs font-medium text-rose-400 inline-flex items-center gap-1">
+                <span>{t(lang, 'navMyRequests')}</span>
+                <ArrowUpRight size={12} />
+              </span>
             </div>
-            <div className="p-3 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)]">
+            <div className="p-3 rounded-lg bg-rose-500/15 text-rose-400">
               <AlertTriangle size={22} />
             </div>
           </div>
@@ -611,7 +691,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
           <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+              <div className="p-2.5 rounded-lg bg-violet-500/15 text-violet-400">
                 <Clock size={19} />
               </div>
               <div>
@@ -679,12 +759,29 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="p-5 space-y-5">
-            {/* 5 Clear Percentage & Overtime Summary Cards */}
+            {/* 5 Clear Interactive Vivid Attendance Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div className="p-3.5 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-2">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  canManageAttendance
+                    ? onNavigate('attendance_hub', 'sheet')
+                    : onNavigate('my_requests', 'attendance')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    canManageAttendance
+                      ? onNavigate('attendance_hub', 'sheet')
+                      : onNavigate('my_requests', 'attendance');
+                  }
+                }}
+                className={`${getVividCardClass(5)} p-3.5 rounded-xl space-y-2`}
+              >
                 <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
                   <span>{t(lang, 'attendanceComplianceRateLabel')}</span>
-                  <CheckCircle2 size={15} className="text-[var(--status-success-text)]" />
+                  <CheckCircle2 size={15} className="text-lime-400" />
                 </div>
                 <div className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-success-text)]">
                   {attMetrics.compliancePercent}%
@@ -701,12 +798,29 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-1.5">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  canManageAttendance
+                    ? onNavigate('attendance_hub', 'sheet')
+                    : onNavigate('my_requests', 'attendance')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    canManageAttendance
+                      ? onNavigate('attendance_hub', 'sheet')
+                      : onNavigate('my_requests', 'attendance');
+                  }
+                }}
+                className={`${getVividCardClass(6)} p-3.5 rounded-xl space-y-1.5`}
+              >
                 <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
                   <span>{t(lang, 'overtimeHoursLabel')}</span>
-                  <TrendingUp size={15} className="text-[var(--primary-text)]" />
+                  <TrendingUp size={15} className="text-sky-400" />
                 </div>
-                <div className="font-display font-mono-tabular text-2xl font-bold text-[var(--primary-text)]">
+                <div className="font-display font-mono-tabular text-2xl font-bold text-sky-400">
                   {formatAttendanceDuration(attMetrics.totalOvertimeMinutes, lang)}
                 </div>
                 <p className="text-[11px] font-mono-tabular text-[var(--text-muted)]">
@@ -715,12 +829,29 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-1.5">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  canViewViolations
+                    ? onNavigate('attendance_hub', 'violations')
+                    : onNavigate('my_requests', 'attendance')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    canViewViolations
+                      ? onNavigate('attendance_hub', 'violations')
+                      : onNavigate('my_requests', 'attendance');
+                  }
+                }}
+                className={`${getVividCardClass(7)} p-3.5 rounded-xl space-y-1.5`}
+              >
                 <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
                   <span>{t(lang, 'lateArrivalTag')}</span>
-                  <LogIn size={15} className="text-[var(--status-warn-text)]" />
+                  <LogIn size={15} className="text-orange-400" />
                 </div>
-                <div className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-warn-text)]">
+                <div className="font-display font-mono-tabular text-2xl font-bold text-orange-400">
                   {attMetrics.latePercent}%
                 </div>
                 <p className="text-[11px] font-mono-tabular text-[var(--text-muted)]">
@@ -728,12 +859,29 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-1.5">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  canViewViolations
+                    ? onNavigate('attendance_hub', 'violations')
+                    : onNavigate('my_requests', 'attendance')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    canViewViolations
+                      ? onNavigate('attendance_hub', 'violations')
+                      : onNavigate('my_requests', 'attendance');
+                  }
+                }}
+                className={`${getVividCardClass(8)} p-3.5 rounded-xl space-y-1.5`}
+              >
                 <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
                   <span>{t(lang, 'earlyDepartureTag')}</span>
-                  <AlertTriangle size={15} className="text-[var(--status-danger-text)]" />
+                  <AlertTriangle size={15} className="text-pink-400" />
                 </div>
-                <div className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-danger-text)]">
+                <div className="font-display font-mono-tabular text-2xl font-bold text-pink-400">
                   {attMetrics.earlyExitPercent}%
                 </div>
                 <p className="text-[11px] font-mono-tabular text-[var(--text-muted)]">
@@ -741,7 +889,24 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-[var(--app-bg)] border border-[var(--border)] space-y-1.5">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  canManageViolations
+                    ? onNavigate('attendance_hub', 'violations')
+                    : onNavigate('my_requests', 'attendance')
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    canManageViolations
+                      ? onNavigate('attendance_hub', 'violations')
+                      : onNavigate('my_requests', 'attendance');
+                  }
+                }}
+                className={`${getVividCardClass(9)} p-3.5 rounded-xl space-y-1.5`}
+              >
                 <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
                   <span>
                     {canManageViolations
@@ -752,11 +917,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                       ? 'الإنذارات والمناوبات'
                       : 'Active / Warnings'}
                   </span>
-                  <ShieldAlert size={15} className="text-[var(--primary-text)]" />
+                  <ShieldAlert size={15} className="text-fuchsia-400" />
                 </div>
                 <div className="font-display font-mono-tabular text-2xl font-bold text-[var(--text-main)]">
                   {attMetrics.openShifts} /{' '}
-                  <span className="text-[var(--status-warn-text)]">
+                  <span className="text-fuchsia-400">
                     {canManageViolations
                       ? attMetrics.pendingRectificationCount
                       : attMetrics.unrectifiedWarningsCount}
@@ -858,10 +1023,21 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Pending Substitute Exception Requests (Manager Review — gated by permissions) */}
       {canViewVacations && canApproveExceptions && pendingExceptions.length > 0 && (
-        <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--status-warn-border)] overflow-hidden">
-          <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--status-warn-bg)]/40 flex flex-wrap items-center justify-between gap-4">
+        <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate('requests', 'exceptions')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate('requests', 'exceptions');
+              }
+            }}
+            className="px-6 py-4 border-b border-[var(--border)] bg-[var(--status-warn-bg)]/40 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-[var(--status-warn-bg)]/55 transition-colors"
+          >
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)]">
+              <div className="p-2 rounded-lg bg-teal-500/15 text-teal-400">
                 <ShieldCheck size={18} />
               </div>
               <div>
@@ -873,13 +1049,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => onNavigate('requests', 'exceptions')}
-              className="text-xs font-semibold text-[var(--primary-text)] hover:underline whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              {t(lang, 'subTabExceptions')}
-            </button>
+            <span className="text-xs font-semibold text-[var(--primary-text)] hover:underline whitespace-nowrap shrink-0 inline-flex items-center gap-1">
+              <span>{t(lang, 'subTabExceptions')}</span>
+              <ArrowUpRight size={13} />
+            </span>
           </div>
           <div className="divide-y divide-[var(--border)]">
             {pendingExceptions.map((ex) => (
@@ -925,9 +1098,20 @@ const Dashboard: React.FC<DashboardProps> = ({
       {/* Pending Requests Action Queue (HR / Manager / Admin / Viewer with view_vacations) */}
       {canViewVacations && pendingVacations.length > 0 && (
         <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
-          <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-4">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate('requests', 'leaves')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate('requests', 'leaves');
+              }
+            }}
+            className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-[var(--surface-subtle)]/80 transition-colors"
+          >
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+              <div className="p-2 rounded-lg bg-indigo-500/15 text-indigo-400">
                 <Hourglass size={18} />
               </div>
               <div>
@@ -939,13 +1123,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => onNavigate('requests', 'leaves')}
-              className="text-xs font-semibold text-[var(--primary-text)] hover:underline whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              {t(lang, 'viewAllVacations')}
-            </button>
+            <span className="text-xs font-semibold text-[var(--primary-text)] hover:underline whitespace-nowrap shrink-0 inline-flex items-center gap-1">
+              <span>{t(lang, 'viewAllVacations')}</span>
+              <ArrowUpRight size={13} />
+            </span>
           </div>
 
           <div className="overflow-x-auto">
@@ -1032,20 +1213,28 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {canViewAttendance && (
             <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
-              <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-3">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onNavigate('attendance')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onNavigate('attendance');
+                  }
+                }}
+                className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-3 cursor-pointer hover:bg-[var(--surface-subtle)]/80 transition-colors"
+              >
                 <div className="flex items-center gap-2.5">
-                  <AlertTriangle size={18} className="text-[var(--status-warn-text)]" />
+                  <AlertTriangle size={18} className="text-yellow-400" />
                   <h3 className="font-display text-base font-bold text-[var(--text-main)]">
                     {t(lang, 'violationsAlertTitle')}
                   </h3>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('attendance')}
-                  className="text-xs font-semibold text-[var(--primary-text)] hover:underline cursor-pointer"
-                >
-                  {t(lang, 'openAttendancePageBtn')}
-                </button>
+                <span className="text-xs font-semibold text-[var(--primary-text)] hover:underline inline-flex items-center gap-1">
+                  <span>{t(lang, 'openAttendancePageBtn')}</span>
+                  <ArrowUpRight size={13} />
+                </span>
               </div>
 
               <div className="p-4 divide-y divide-[var(--border)]">
@@ -1089,20 +1278,28 @@ const Dashboard: React.FC<DashboardProps> = ({
 
           {canViewMyRequests && (
             <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
-              <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-3">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onNavigate('my_requests')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onNavigate('my_requests');
+                  }
+                }}
+                className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-3 cursor-pointer hover:bg-[var(--surface-subtle)]/80 transition-colors"
+              >
                 <div className="flex items-center gap-2.5">
-                  <ClipboardList size={18} className="text-[var(--primary-text)]" />
+                  <ClipboardList size={18} className="text-blue-400" />
                   <h3 className="font-display text-base font-bold text-[var(--text-main)]">
                     {t(lang, 'navMyRequests')}
                   </h3>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('my_requests')}
-                  className="text-xs font-semibold text-[var(--primary-text)] hover:underline cursor-pointer"
-                >
-                  {t(lang, 'viewAllVacations')}
-                </button>
+                <span className="text-xs font-semibold text-[var(--primary-text)] hover:underline inline-flex items-center gap-1">
+                  <span>{t(lang, 'viewAllVacations')}</span>
+                  <ArrowUpRight size={13} />
+                </span>
               </div>
               <div className="p-4 divide-y divide-[var(--border)]">
                 {myRecentRequests.length > 0 ? (
@@ -1132,9 +1329,20 @@ const Dashboard: React.FC<DashboardProps> = ({
       {canViewVacations && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <section className="xl:col-span-2 bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-4">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('requests', 'leaves')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigate('requests', 'leaves');
+                }
+              }}
+              className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-4 cursor-pointer hover:bg-[var(--surface-subtle)]/80 transition-colors"
+            >
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+                <div className="p-2 rounded-lg bg-purple-500/15 text-purple-400">
                   <Clock size={18} />
                 </div>
                 <div>
@@ -1144,8 +1352,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                   <p className="text-xs text-[var(--text-muted)]">{t(lang, 'currentLeavesDesc')}</p>
                 </div>
               </div>
-              <span className="text-xs font-mono-tabular font-semibold text-[var(--primary-text)]">
-                {activeLeaves.length}
+              <span className="text-xs font-mono-tabular font-semibold text-purple-400 inline-flex items-center gap-1">
+                <span>{activeLeaves.length}</span>
+                <ArrowUpRight size={13} />
               </span>
             </div>
 
@@ -1234,9 +1443,20 @@ const Dashboard: React.FC<DashboardProps> = ({
           </section>
 
           {/* Upcoming Leaves (Next 14 Days) */}
-          <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden flex flex-col">
+          <section
+            role="button"
+            tabIndex={0}
+            onClick={() => onNavigate('requests', 'leaves')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNavigate('requests', 'leaves');
+              }
+            }}
+            className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden flex flex-col cursor-pointer hover:border-[var(--primary)]/50 transition-colors"
+          >
             <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)]">
+              <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
                 <CalendarClock size={18} />
               </div>
               <div>
@@ -1285,7 +1505,18 @@ const Dashboard: React.FC<DashboardProps> = ({
       {(canViewEmployees || canViewOrg || canViewVacations) && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {(canViewEmployees || canViewOrg) && (
-            <div className="bg-[var(--card-bg)] p-6 rounded-xl border border-[var(--border)]">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('org', 'departments')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigate('org', 'departments');
+                }
+              }}
+              className="bg-[var(--card-bg)] p-6 rounded-xl border border-[var(--border)] cursor-pointer hover:border-[var(--primary)]/50 transition-colors"
+            >
               <h3 className="font-display text-base font-bold text-[var(--text-main)] mb-4">
                 {t(lang, 'deptDistributionChart')}
               </h3>
@@ -1326,7 +1557,18 @@ const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {canViewVacations && (
-            <div className="bg-[var(--card-bg)] p-6 rounded-xl border border-[var(--border)]">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('requests', 'balances')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigate('requests', 'balances');
+                }
+              }}
+              className="bg-[var(--card-bg)] p-6 rounded-xl border border-[var(--border)] cursor-pointer hover:border-[var(--primary)]/50 transition-colors"
+            >
               <h3 className="font-display text-base font-bold text-[var(--text-main)] mb-4">
                 {t(lang, 'leaveTypeChartTitle')}
               </h3>
@@ -1380,7 +1622,18 @@ const Dashboard: React.FC<DashboardProps> = ({
           )}
 
           {(canViewEmployees || canViewOrg) && (
-            <div className="bg-[var(--card-bg)] p-6 rounded-xl border border-[var(--border)] flex flex-col">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('org', 'employees')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onNavigate('org', 'employees');
+                }
+              }}
+              className="bg-[var(--card-bg)] p-6 rounded-xl border border-[var(--border)] flex flex-col cursor-pointer hover:border-[var(--primary)]/50 transition-colors"
+            >
               <h3 className="font-display text-base font-bold text-[var(--text-main)] mb-4">
                 {t(lang, 'contractChartTitle')}
               </h3>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -16,6 +16,7 @@ import {
 import { AppUser, Employee, Language, SubstituteExceptionRequest, Vacation } from '../types';
 import { t, translateVacationType } from '../i18n';
 import { getTodayStr } from '../utils/leaveCalculations';
+import { getVividCardClass } from '../utils/cardColors';
 import { AvatarWithFallback, StatusLabel } from './UIPrimitives';
 
 interface SubstitutesViewProps {
@@ -58,6 +59,8 @@ const SubstitutesView: React.FC<SubstitutesViewProps> = ({
   const [deptFilter, setDeptFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'scheduled' | 'completed' | 'conflict'>('all');
   const [reassignTarget, setReassignTarget] = useState<{ vac: Vacation; nextSubstitute: string } | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
+  const scrollToTable = () => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const canManage = currentUser?.permissions.includes('manage_vacations') ?? false;
   const canApproveExceptions =
@@ -309,7 +312,24 @@ const SubstitutesView: React.FC<SubstitutesViewProps> = ({
 
       {/* 4 KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex items-center justify-between">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setViewMode('assignments');
+            setStatusFilter((prev) => (prev === 'active' ? 'all' : 'active'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setViewMode('assignments');
+              setStatusFilter((prev) => (prev === 'active' ? 'all' : 'active'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: viewMode === 'assignments' && statusFilter === 'active' })} p-4 rounded-xl flex items-center justify-between`}
+        >
           <div>
             <p className="text-xs text-[var(--text-muted)]">{t(lang, 'activeCoveragesLabel')}</p>
             <p className="font-display text-2xl font-bold tabular-nums mt-1">{kpis.activeCount}</p>
@@ -319,7 +339,24 @@ const SubstitutesView: React.FC<SubstitutesViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex items-center justify-between">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setViewMode('assignments');
+            setStatusFilter((prev) => (prev === 'scheduled' ? 'all' : 'scheduled'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setViewMode('assignments');
+              setStatusFilter((prev) => (prev === 'scheduled' ? 'all' : 'scheduled'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: viewMode === 'assignments' && statusFilter === 'scheduled' })} p-4 rounded-xl flex items-center justify-between`}
+        >
           <div>
             <p className="text-xs text-[var(--text-muted)]">{t(lang, 'scheduledCoveragesLabel')}</p>
             <p className="font-display text-2xl font-bold tabular-nums mt-1">{kpis.scheduledCount}</p>
@@ -329,7 +366,22 @@ const SubstitutesView: React.FC<SubstitutesViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex items-center justify-between">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setViewMode('roster');
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setViewMode('roster');
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(4, { isActive: viewMode === 'roster' })} p-4 rounded-xl flex items-center justify-between`}
+        >
           <div>
             <p className="text-xs text-[var(--text-muted)]">{t(lang, 'assignedSubstitutesLabel')}</p>
             <p className="font-display text-2xl font-bold tabular-nums mt-1">{kpis.uniqueSubstitutes}</p>
@@ -339,7 +391,24 @@ const SubstitutesView: React.FC<SubstitutesViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex items-center justify-between">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setViewMode('assignments');
+            setStatusFilter((prev) => (prev === 'conflict' ? 'all' : 'conflict'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setViewMode('assignments');
+              setStatusFilter((prev) => (prev === 'conflict' ? 'all' : 'conflict'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(3, { isActive: viewMode === 'assignments' && statusFilter === 'conflict' })} p-4 rounded-xl flex items-center justify-between`}
+        >
           <div>
             <p className="text-xs text-[var(--text-muted)]">{t(lang, 'coverageConflictsLabel')}</p>
             <p
@@ -422,6 +491,7 @@ const SubstitutesView: React.FC<SubstitutesViewProps> = ({
       </div>
 
       {/* Mode 1: Substitute Assignments Table */}
+      <div ref={tableRef}>
       {viewMode === 'assignments' ? (
         <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
           <div className="overflow-x-auto">
@@ -708,6 +778,7 @@ const SubstitutesView: React.FC<SubstitutesViewProps> = ({
           </div>
         </div>
       )}
+      </div>
 
       {/* Reassign Substitute Modal */}
       {reassignTarget && (

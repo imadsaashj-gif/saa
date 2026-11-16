@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   AlertTriangle,
   Building2,
@@ -7,6 +8,7 @@ import {
   Clock,
   Crosshair,
   DoorOpen,
+  Download,
   Lock,
   LogIn,
   LogOut,
@@ -68,6 +70,7 @@ import {
   GeoLocationSource,
   SmartLocationDiagnostic,
 } from '../utils/geolocation';
+import { getVividCardClass } from '../utils/cardColors';
 
 interface AttendanceViewProps {
   attendanceRecords: AttendanceRecord[];
@@ -144,6 +147,8 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
     Boolean(currentUser?.permissions.includes('manage_attendance'));
   const canManageViolations =
     !forcePersonalScope && Boolean(currentUser?.permissions.includes('manage_violations'));
+  const canExportExcel =
+    currentUser?.role === 'SuperAdmin' || Boolean(currentUser?.permissions.includes('export_excel'));
 
   // Resolve employee linked to the current user (required for Employee scope and helpful default for self check-in)
   const linkedEmployee = useMemo(() => {
@@ -188,7 +193,10 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'violations' | 'compliant' | 'unresolved' | 'open'>('all');
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'violations' | 'compliant' | 'unresolved' | 'open' | 'overtime'
+  >('all');
+  const ledgerSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Open-shift Check-Out Modal
   const [checkoutTarget, setCheckoutTarget] = useState<AttendanceRecord | null>(null);
@@ -604,6 +612,7 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
         return false;
       }
       if (statusFilter === 'open' && Boolean(r.checkOutTime)) return false;
+      if (statusFilter === 'overtime' && r.effectiveOvertime <= 0) return false;
 
       if (!q) return true;
       return (
@@ -613,6 +622,53 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
       );
     });
   }, [enrichedRecords, dateFilter, statusFilter, searchQuery]);
+
+  const handleExportAttendance = () => {
+    const exportRows = filteredRecords.map((rec) => {
+      const emp = employees.find((e) => e.id === rec.employeeId);
+      const statusText =
+        rec.evalRes.violationType === 'None'
+          ? rec.checkOutTime
+            ? t(lang, 'compliantShiftTag')
+            : t(lang, 'activeShiftBadge')
+          : rec.effectiveRectification.status === 'Resolved'
+          ? t(lang, 'rectificationStatusResolved')
+          : rec.effectiveRectification.status === 'Pending'
+          ? t(lang, 'rectificationStatusPending')
+          : rec.effectiveRectification.status === 'Rejected'
+          ? t(lang, 'rectificationStatusRejected')
+          : t(lang, 'rectificationStatusUnresolved');
+
+      return {
+        [lang === 'ar' ? 'الموظف' : 'Employee']: rec.employeeName,
+        [lang === 'ar' ? 'الرقم الإداري' : 'Admin ID']: emp?.adminId || '-',
+        [lang === 'ar' ? 'الإدارة' : 'Department']: emp?.department || '-',
+        [lang === 'ar' ? 'التاريخ' : 'Date']: rec.date,
+        [lang === 'ar' ? 'نظام الدوام' : 'Shift Mode']:
+          rec.shiftMode === 'flexible' ? t(lang, 'shiftFlexibleLabel') : t(lang, 'shiftStandardLabel'),
+        [lang === 'ar' ? 'موقع العمل' : 'Work Site']: rec.workSite,
+        [lang === 'ar' ? 'وقت الدخول' : 'Check-In']: rec.checkInTime,
+        [lang === 'ar' ? 'بوابة/نقطة الدخول' : 'Entry Location']: rec.entryLocation,
+        [lang === 'ar' ? 'وقت الخروج' : 'Check-Out']: rec.checkOutTime || '-',
+        [lang === 'ar' ? 'بوابة/نقطة الخروج' : 'Exit Location']: rec.exitLocation || '-',
+        [lang === 'ar' ? 'نسبة الالتزام' : 'Adherence %']: `${rec.evalRes.adherencePercent}%`,
+        [lang === 'ar' ? 'دقائق التأخير' : 'Late Minutes']: rec.evalRes.lateMinutes,
+        [lang === 'ar' ? 'دقائق الخروج المبكر' : 'Early Exit Minutes']: rec.evalRes.earlyExitMinutes,
+        [lang === 'ar' ? 'الدقائق الإضافية' : 'Overtime Minutes']: rec.effectiveOvertime,
+        [lang === 'ar' ? 'الحالة' : 'Status']: statusText,
+        [lang === 'ar' ? 'ملاحظات' : 'Notes']: rec.notes || '',
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+    XLSX.writeFile(wb, `attendance_records_${getTodayStr()}.xlsx`);
+    onToast(
+      'success',
+      lang === 'ar' ? 'تم تصدير كشف الحضور والانصراف إلى Excel بنجاح.' : 'Attendance sheet exported to Excel.'
+    );
+  };
 
   const emitAttendanceAlert = (rec: AttendanceRecord) => {
     if (!onNotify || rec.violationType === 'None') return;
@@ -1434,14 +1490,28 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
         </div>
       )}
 
-      {/* 4 KPI Cards: Percentages (%) + Calculated Overtime + Active / Warnings */}
+      {/* 4 Interactive Vivid KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter((prev) => (prev === 'compliant' ? 'all' : 'compliant'));
+            ledgerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter((prev) => (prev === 'compliant' ? 'all' : 'compliant'));
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: statusFilter === 'compliant' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div className="min-w-0">
             <p className="text-xs text-[var(--text-muted)] font-medium">
               {t(lang, 'attendanceComplianceRateLabel')}
             </p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-success-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-emerald-400 mt-1">
               {metrics.compliancePercent}%
             </p>
             <p className="text-[11px] font-mono-tabular text-[var(--text-muted)] mt-0.5 truncate">
@@ -1450,17 +1520,31 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
               <strong className="text-[var(--text-main)]">{metrics.averageAdherencePercent}%</strong>
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)] shrink-0">
+          <div className="p-2.5 rounded-lg bg-emerald-500/15 text-emerald-400 shrink-0">
             <CheckCircle2 size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter((prev) => (prev === 'violations' ? 'all' : 'violations'));
+            ledgerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter((prev) => (prev === 'violations' ? 'all' : 'violations'));
+            }
+          }}
+          className={`${getVividCardClass(2, { isActive: statusFilter === 'violations' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div className="min-w-0">
             <p className="text-xs text-[var(--text-muted)] font-medium">
               {t(lang, 'attendanceLateRateLabel')}
             </p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-warn-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-amber-400 mt-1">
               {metrics.violationPercent}%
             </p>
             <p className="text-[11px] font-mono-tabular text-[var(--text-muted)] mt-0.5 truncate">
@@ -1468,15 +1552,29 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
               {t(lang, 'earlyDepartureTag')} ({metrics.earlyExitCount})
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)] shrink-0">
+          <div className="p-2.5 rounded-lg bg-amber-500/15 text-amber-400 shrink-0">
             <LogIn size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter((prev) => (prev === 'overtime' ? 'all' : 'overtime'));
+            ledgerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter((prev) => (prev === 'overtime' ? 'all' : 'overtime'));
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: statusFilter === 'overtime' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div className="min-w-0">
             <p className="text-xs text-[var(--text-muted)] font-medium">{t(lang, 'overtimeHoursLabel')}</p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--primary-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-cyan-400 mt-1">
               {formatAttendanceDuration(metrics.totalOvertimeMinutes, lang)}
             </p>
             <p className="text-[11px] font-mono-tabular text-[var(--text-muted)] mt-0.5 truncate">
@@ -1484,12 +1582,28 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
               {attCfg?.overtimeMultiplier ?? 1.5}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)] shrink-0">
+          <div className="p-2.5 rounded-lg bg-cyan-500/15 text-cyan-400 shrink-0">
             <TrendingUp size={20} />
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-4 flex items-center justify-between gap-3">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            const targetKey = metrics.openShifts > 0 ? 'open' : 'unresolved';
+            setStatusFilter((prev) => (prev === targetKey ? 'all' : targetKey));
+            ledgerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              const targetKey = metrics.openShifts > 0 ? 'open' : 'unresolved';
+              setStatusFilter((prev) => (prev === targetKey ? 'all' : targetKey));
+            }
+          }}
+          className={`${getVividCardClass(3, { isActive: statusFilter === 'open' || statusFilter === 'unresolved' })} rounded-xl p-4 flex items-center justify-between gap-3`}
+        >
           <div className="min-w-0">
             <p className="text-xs text-[var(--text-muted)] font-medium">
               {canManageViolations
@@ -1500,7 +1614,7 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
                 ? 'المناوبات والإنذارات الخاصة بك'
                 : 'Active Shifts & Warnings'}
             </p>
-            <p className="font-display font-mono-tabular text-2xl font-bold text-[var(--status-danger-text)] mt-1">
+            <p className="font-display font-mono-tabular text-2xl font-bold text-rose-400 mt-1">
               {metrics.openShifts} / {canManageViolations ? metrics.pendingRectificationCount : metrics.unrectifiedWarningsCount}
             </p>
             <p className="text-[11px] font-mono-tabular text-[var(--text-muted)] mt-0.5 truncate">
@@ -1510,7 +1624,7 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
                 : `${metrics.unrectifiedWarningsCount} ${lang === 'ar' ? 'إنذار نشط' : 'warnings'}`}
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-[var(--status-danger-bg)] text-[var(--status-danger-text)] shrink-0">
+          <div className="p-2.5 rounded-lg bg-rose-500/15 text-rose-400 shrink-0">
             <AlertTriangle size={20} />
           </div>
         </div>
@@ -2215,7 +2329,10 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
       )}
 
       {/* Filter Bar & Attendance Records Ledger */}
-      <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <div
+        ref={ledgerSectionRef}
+        className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden"
+      >
         <div className="p-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex flex-wrap p-1 rounded-lg bg-[var(--card-bg)] border border-[var(--border)] gap-1">
             {[
@@ -2223,6 +2340,7 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
               { id: 'violations', label: lang === 'ar' ? 'مخالفات الدخول/الخروج' : 'Violations' },
               { id: 'unresolved', label: lang === 'ar' ? 'بانتظار التصحيح' : 'Unresolved' },
               { id: 'open', label: t(lang, 'activeShiftBadge') },
+              { id: 'overtime', label: t(lang, 'overtimeCol') },
               { id: 'compliant', label: t(lang, 'compliantShiftTag') },
             ].map((tab) => (
               <button
@@ -2271,6 +2389,17 @@ const AttendanceView: React.FC<AttendanceViewProps> = ({
                 className="w-full ps-8 pe-3 py-1.5 bg-[var(--card-bg)] border border-[var(--border)] rounded-lg text-xs outline-none focus:border-[var(--primary)]"
               />
             </div>
+
+            {canExportExcel && (
+              <button
+                type="button"
+                onClick={handleExportAttendance}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-semibold text-[var(--text-main)] hover:border-[var(--primary)] cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Download size={14} className="text-[var(--primary-text)]" />
+                <span>{t(lang, 'exportExcel')}</span>
+              </button>
+            )}
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Archive,
   Download,
@@ -27,6 +27,7 @@ import {
 } from '../types';
 import { t, translateStatus, translateVacationType } from '../i18n';
 import { formatReadableDate, getTodayStr } from '../utils/leaveCalculations';
+import { getVividCardClass } from '../utils/cardColors';
 import { ConfirmDialog } from './UIPrimitives';
 
 interface ArchiveViewProps {
@@ -95,6 +96,8 @@ const ArchiveView: React.FC<ArchiveViewProps> = ({
   const [yearFilter, setYearFilter] = useState<string>('all');
   const [deptFilter, setDeptFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const ledgerRef = useRef<HTMLDivElement>(null);
+  const scrollToLedger = () => ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Add Document Modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -492,7 +495,7 @@ const ArchiveView: React.FC<ArchiveViewProps> = ({
 
       {/* Scoped Employee Privacy Banner */}
       {isEmployeeScoped && (
-        <div className="p-3.5 rounded-xl bg-[var(--card-bg)] border border-[var(--border)] flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="bg-[var(--card-bg)] border border-[var(--primary)]/35 p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 font-semibold text-[var(--primary-text)]">
             <Lock size={15} />
             <span>{t(lang, 'archiveScopedEmployeeNotice')}</span>
@@ -505,8 +508,117 @@ const ArchiveView: React.FC<ArchiveViewProps> = ({
         </div>
       )}
 
+      {/* Interactive Archive Category Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setCategoryFilter('all');
+            scrollToLedger();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setCategoryFilter('all');
+              scrollToLedger();
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: categoryFilter === 'all' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{t(lang, 'archiveCategoryAll')}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5">{categoryCounts.all}</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)] shrink-0">
+            <Archive size={18} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setCategoryFilter((prev) => (prev === 'document' ? 'all' : 'document'));
+            scrollToLedger();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setCategoryFilter((prev) => (prev === 'document' ? 'all' : 'document'));
+              scrollToLedger();
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: categoryFilter === 'document' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{t(lang, 'archiveCategoryDocs')}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--status-success-text)]">
+              {categoryCounts.document}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)] shrink-0">
+            <FileCheck size={18} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setCategoryFilter((prev) => (prev === 'leave' ? 'all' : 'leave'));
+            scrollToLedger();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setCategoryFilter((prev) => (prev === 'leave' ? 'all' : 'leave'));
+              scrollToLedger();
+            }
+          }}
+          className={`${getVividCardClass(10, { isActive: categoryFilter === 'leave' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{t(lang, 'archiveCategoryLeaves')}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--primary-text)]">
+              {categoryCounts.leave}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--surface-subtle)] text-[var(--primary-text)] shrink-0">
+            <FolderArchive size={18} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setCategoryFilter((prev) => (prev === 'attendance' ? 'all' : 'attendance'));
+            scrollToLedger();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setCategoryFilter((prev) => (prev === 'attendance' ? 'all' : 'attendance'));
+              scrollToLedger();
+            }
+          }}
+          className={`${getVividCardClass(9, { isActive: categoryFilter === 'attendance' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{t(lang, 'archiveCategoryAttendance')}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--status-warn-text)]">
+              {categoryCounts.attendance + categoryCounts.exit_permit + categoryCounts.hr_request}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)] shrink-0">
+            <Paperclip size={18} />
+          </div>
+        </div>
+      </div>
+
       {/* Filter Card */}
-      <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <div ref={ledgerRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
         <div className="p-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex flex-wrap p-1 rounded-lg bg-[var(--card-bg)] border border-[var(--border)] gap-1">
             {categoryTabs.map((tab) => (

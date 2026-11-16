@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Download, Search, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { Download, Search, AlertTriangle, CheckCircle2, Clock, Users } from 'lucide-react';
 import { Employee, Language, SystemSettings, Vacation } from '../types';
 import { t } from '../i18n';
 import { getEmployeeLeaveSummary, getTodayStr } from '../utils/leaveCalculations';
+import { getVividCardClass } from '../utils/cardColors';
 import { AvatarWithFallback } from './UIPrimitives';
 
 interface LeaveBalancesViewProps {
@@ -27,6 +28,8 @@ const LeaveBalancesView: React.FC<LeaveBalancesViewProps> = ({
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
+  const [balanceFilter, setBalanceFilter] = useState<'all' | 'normal' | 'near' | 'exceeded'>('all');
+  const tableRef = useRef<HTMLDivElement>(null);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>([currentYear - 1, currentYear, currentYear + 1]);
@@ -42,7 +45,7 @@ const LeaveBalancesView: React.FC<LeaveBalancesViewProps> = ({
     [employees]
   );
 
-  const summaries = useMemo(() => {
+  const baseSummaries = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     return employees
       .filter((emp) => {
@@ -57,6 +60,25 @@ const LeaveBalancesView: React.FC<LeaveBalancesViewProps> = ({
       .map((emp) => getEmployeeLeaveSummary(emp, vacations, settings, selectedYear))
       .sort((a, b) => b.utilizationPercent - a.utilizationPercent);
   }, [employees, vacations, settings, selectedYear, searchTerm, deptFilter]);
+
+  const balanceCounts = useMemo(() => {
+    return {
+      all: baseSummaries.length,
+      normal: baseSummaries.filter((s) => s.status === 'normal').length,
+      near: baseSummaries.filter((s) => s.status === 'near').length,
+      exceeded: baseSummaries.filter((s) => s.status === 'exceeded').length,
+    };
+  }, [baseSummaries]);
+
+  const summaries = useMemo(
+    () =>
+      balanceFilter === 'all'
+        ? baseSummaries
+        : baseSummaries.filter((s) => s.status === balanceFilter),
+    [baseSummaries, balanceFilter]
+  );
+
+  const scrollToTable = () => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const handleExportLedger = () => {
     const rows = summaries.map((s) => ({
@@ -112,6 +134,114 @@ const LeaveBalancesView: React.FC<LeaveBalancesViewProps> = ({
         </div>
       )}
 
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setBalanceFilter('all');
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setBalanceFilter('all');
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: balanceFilter === 'all' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{lang === 'ar' ? 'إجمالي الموظفين' : 'Total Staff'}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5">{balanceCounts.all}</p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--primary-soft)] text-[var(--primary-text)] shrink-0">
+            <Users size={19} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setBalanceFilter((prev) => (prev === 'normal' ? 'all' : 'normal'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setBalanceFilter((prev) => (prev === 'normal' ? 'all' : 'normal'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: balanceFilter === 'normal' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{t(lang, 'balanceStatusNominal')}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--status-success-text)]">
+              {balanceCounts.normal}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success-text)] shrink-0">
+            <CheckCircle2 size={19} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setBalanceFilter((prev) => (prev === 'near' ? 'all' : 'near'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setBalanceFilter((prev) => (prev === 'near' ? 'all' : 'near'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(2, { isActive: balanceFilter === 'near' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{t(lang, 'balanceStatusNear')}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--status-warn-text)]">
+              {balanceCounts.near}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--status-warn-bg)] text-[var(--status-warn-text)] shrink-0">
+            <Clock size={19} />
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setBalanceFilter((prev) => (prev === 'exceeded' ? 'all' : 'exceeded'));
+            scrollToTable();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setBalanceFilter((prev) => (prev === 'exceeded' ? 'all' : 'exceeded'));
+              scrollToTable();
+            }
+          }}
+          className={`${getVividCardClass(3, { isActive: balanceFilter === 'exceeded' })} p-4 rounded-xl flex items-center justify-between gap-2`}
+        >
+          <div>
+            <p className="text-xs text-[var(--text-muted)]">{t(lang, 'balanceStatusExceeded')}</p>
+            <p className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-[var(--status-danger-text)]">
+              {balanceCounts.exceeded}
+            </p>
+          </div>
+          <div className="p-2.5 rounded-lg bg-[var(--status-danger-bg)] text-[var(--status-danger-text)] shrink-0">
+            <AlertTriangle size={19} />
+          </div>
+        </div>
+      </div>
+
       <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[220px]">
           <Search
@@ -156,7 +286,7 @@ const LeaveBalancesView: React.FC<LeaveBalancesViewProps> = ({
         </div>
       </div>
 
-      <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <div ref={tableRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-start">
             <thead className="bg-[var(--surface-subtle)] border-b border-[var(--border)] text-xs text-[var(--text-muted)]">

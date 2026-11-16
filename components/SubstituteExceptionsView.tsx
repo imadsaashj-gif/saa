@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   CheckCircle2,
   Clock,
+  Download,
   Edit,
   Eye,
   Plus,
@@ -12,6 +14,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { getVividCardClass } from '../utils/cardColors';
 import {
   AppUser,
   Employee,
@@ -76,6 +79,10 @@ const SubstituteExceptionsView: React.FC<SubstituteExceptionsViewProps> = ({
     currentUser?.role === 'Manager' ||
     Boolean(currentUser?.permissions.includes('approve_exceptions'));
 
+  const canExportExcel =
+    currentUser?.role === 'SuperAdmin' || Boolean(currentUser?.permissions.includes('export_excel'));
+  const tableRef = useRef<HTMLDivElement | null>(null);
+
   const counts = useMemo(
     () => ({
       all: substituteExceptions.length,
@@ -110,6 +117,32 @@ const SubstituteExceptionsView: React.FC<SubstituteExceptionsViewProps> = ({
     Approved: lang === 'ar' ? 'معتمد' : 'Approved',
     Returned: lang === 'ar' ? 'مُعاد للتعديل' : 'Returned',
     Rejected: lang === 'ar' ? 'مرفوض' : 'Rejected',
+  };
+
+  const handleExportExceptions = () => {
+    const rows = filteredExceptions.map((ex) => {
+      const emp = employees.find((e) => e.id === ex.employeeId);
+      return {
+        [lang === 'ar' ? 'الموظف' : 'Employee']: ex.employeeName,
+        [lang === 'ar' ? 'الرقم الإداري' : 'Admin ID']: emp?.adminId || '',
+        [lang === 'ar' ? 'القسم' : 'Department']: emp?.department || '',
+        [lang === 'ar' ? 'مكلّف كبديل عن' : 'Covering For']: ex.coveringForEmployeeName,
+        [lang === 'ar' ? 'فترة التكليف' : 'Coverage Period']: `${ex.coverageStartDate} → ${ex.coverageEndDate}`,
+        [lang === 'ar' ? 'تاريخ البداية المطلوب' : 'Requested Start']: ex.requestedStartDate,
+        [lang === 'ar' ? 'تاريخ النهاية المطلوب' : 'Requested End']: ex.requestedEndDate,
+        [lang === 'ar' ? 'أيام العمل' : 'Work Days']: ex.requestedDays,
+        [lang === 'ar' ? 'نوع الإجازة' : 'Leave Type']: translateVacationType(ex.vacationType, lang),
+        [lang === 'ar' ? 'مبرر الاستثناء' : 'Reason']: ex.reason || '',
+        [lang === 'ar' ? 'ملاحظات الإدارة' : 'Admin Notes']: ex.adminNotes || '',
+        [lang === 'ar' ? 'الحالة' : 'Status']: statusLabels[ex.status] || ex.status,
+        [lang === 'ar' ? 'المعتمد' : 'Approved By']: ex.approvedBy || '',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Exceptions');
+    XLSX.writeFile(wb, `substitute_exceptions_${getTodayStr()}.xlsx`);
+    onToast('success', lang === 'ar' ? 'تم تصدير طلبات الاستثناء بنجاح.' : 'Exception requests exported.');
   };
 
   // Compute net work days live inside Add/Edit Exception modal
@@ -327,53 +360,125 @@ const SubstituteExceptionsView: React.FC<SubstituteExceptionsViewProps> = ({
           <p className="text-xs text-[var(--text-muted)]">{t(lang, 'exceptionsQueueDesc')}</p>
         </div>
 
-        {canManage && (
-          <button
-            type="button"
-            onClick={openNewExceptionModal}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <Plus size={15} />
-            <span>{t(lang, 'newExceptionBtn')}</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {canExportExcel && (
+            <button
+              type="button"
+              onClick={handleExportExceptions}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Download size={14} />
+              <span>{t(lang, 'exportExcel')}</span>
+            </button>
+          )}
+          {canManage && (
+            <button
+              type="button"
+              onClick={openNewExceptionModal}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Plus size={15} />
+              <span>{t(lang, 'newExceptionBtn')}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPI Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex items-center justify-between">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter('all');
+            tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter('all');
+              tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: statusFilter === 'all' })} p-4 rounded-xl flex items-center justify-between`}
+        >
           <div>
             <div className="text-xs text-[var(--text-muted)]">{statusLabels.all}</div>
-            <div className="font-display text-2xl font-bold font-mono-tabular mt-0.5">{counts.all}</div>
+            <div className="font-display text-2xl font-bold font-mono-tabular mt-0.5 text-cyan-400">{counts.all}</div>
           </div>
-          <ShieldCheck size={18} className="text-[var(--primary-text)]" />
+          <ShieldCheck size={18} className="text-cyan-400" />
         </div>
-        <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex items-center justify-between">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter((prev) => (prev === 'Pending' ? 'all' : 'Pending'));
+            tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter((prev) => (prev === 'Pending' ? 'all' : 'Pending'));
+              tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(2, { isActive: statusFilter === 'Pending' })} p-4 rounded-xl flex items-center justify-between`}
+        >
           <div>
             <div className="text-xs text-[var(--text-muted)]">{statusLabels.Pending}</div>
-            <div className="font-display text-2xl font-bold font-mono-tabular text-[var(--status-warn-text)] mt-0.5">
+            <div className="font-display text-2xl font-bold font-mono-tabular text-amber-400 mt-0.5">
               {counts.Pending}
             </div>
           </div>
-          <Clock size={18} className="text-[var(--status-warn-text)]" />
+          <Clock size={18} className="text-amber-400" />
         </div>
-        <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex items-center justify-between">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter((prev) => (prev === 'Approved' ? 'all' : 'Approved'));
+            tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter((prev) => (prev === 'Approved' ? 'all' : 'Approved'));
+              tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: statusFilter === 'Approved' })} p-4 rounded-xl flex items-center justify-between`}
+        >
           <div>
             <div className="text-xs text-[var(--text-muted)]">{statusLabels.Approved}</div>
-            <div className="font-display text-2xl font-bold font-mono-tabular text-[var(--status-success-text)] mt-0.5">
+            <div className="font-display text-2xl font-bold font-mono-tabular text-emerald-400 mt-0.5">
               {counts.Approved}
             </div>
           </div>
-          <CheckCircle2 size={18} className="text-[var(--status-success-text)]" />
+          <CheckCircle2 size={18} className="text-emerald-400" />
         </div>
-        <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex items-center justify-between">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setStatusFilter((prev) => (prev === 'Returned' ? 'all' : 'Returned'));
+            tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setStatusFilter((prev) => (prev === 'Returned' ? 'all' : 'Returned'));
+              tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }}
+          className={`${getVividCardClass(9, { isActive: statusFilter === 'Returned' })} p-4 rounded-xl flex items-center justify-between`}
+        >
           <div>
             <div className="text-xs text-[var(--text-muted)]">{statusLabels.Returned}</div>
-            <div className="font-display text-2xl font-bold font-mono-tabular text-[var(--primary-text)] mt-0.5">
+            <div className="font-display text-2xl font-bold font-mono-tabular text-fuchsia-400 mt-0.5">
               {counts.Returned}
             </div>
           </div>
-          <RotateCcw size={18} className="text-[var(--primary-text)]" />
+          <RotateCcw size={18} className="text-fuchsia-400" />
         </div>
       </div>
 
@@ -415,7 +520,7 @@ const SubstituteExceptionsView: React.FC<SubstituteExceptionsViewProps> = ({
       </div>
 
       {/* Table */}
-      <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <div ref={tableRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-start">
             <thead className="bg-[var(--surface-subtle)] border-b border-[var(--border)] text-xs text-[var(--text-muted)]">

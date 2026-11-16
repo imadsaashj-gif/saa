@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Calendar,
@@ -42,6 +42,7 @@ import {
   getEmployeeMonthlyExitUsage,
   getTodayStr,
 } from '../utils/leaveCalculations';
+import { getVividCardClass } from '../utils/cardColors';
 import { computeTimeDiffMinutes } from './QuickRequestModal';
 import { NotificationEmitPayload } from './RequestsHub';
 import AttendanceView from './AttendanceView';
@@ -123,6 +124,8 @@ const MyRequestsView: React.FC<MyRequestsViewProps> = ({
   onNotify,
 }) => {
   const [internalSubTab, setInternalSubTab] = useState<MyRequestsSubTab>('leave');
+  const ledgerRef = useRef<HTMLElement>(null);
+  const coveragesRef = useRef<HTMLElement>(null);
   const activeSubTab: MyRequestsSubTab = controlledSubTab ?? internalSubTab;
   const setSubTab = (tab: MyRequestsSubTab) => {
     if (onChangeSubTab) {
@@ -751,7 +754,7 @@ const MyRequestsView: React.FC<MyRequestsViewProps> = ({
 
   if (!activeEmployee) {
     return (
-      <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] p-12 text-center space-y-2 text-[var(--text-muted)]">
+      <div className="bg-[var(--card-bg)] border border-[var(--border)] rounded-xl p-12 text-center space-y-2 text-[var(--text-muted)]">
         <ClipboardList size={36} className="mx-auto opacity-45" />
         <p className="text-sm font-medium text-[var(--text-main)]">{t(lang, 'myRequestsNoEmployeeLinked')}</p>
       </div>
@@ -878,7 +881,18 @@ const MyRequestsView: React.FC<MyRequestsViewProps> = ({
 
       {/* Band 1: 4-Card Personal Allowances & Summary KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] space-y-2.5">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setSubTab('leave')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setSubTab('leave');
+            }
+          }}
+          className={`${getVividCardClass(1, { isActive: activeSubTab === 'leave' })} p-5 rounded-xl space-y-2.5`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'myRequestsAnnualBalance')}</span>
             <Calendar size={17} className="text-[var(--primary-text)]" />
@@ -902,7 +916,24 @@ const MyRequestsView: React.FC<MyRequestsViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] space-y-2.5">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setSubTab('exit');
+            setComposerTab('exit');
+            setIsComposerOpen(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setSubTab('exit');
+              setComposerTab('exit');
+              setIsComposerOpen(true);
+            }
+          }}
+          className={`${getVividCardClass(0, { isActive: activeSubTab === 'exit' && composerTab === 'exit' })} p-5 rounded-xl space-y-2.5`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'myRequestsExitQuota')}</span>
             <DoorOpen size={17} className="text-[var(--primary-text)]" />
@@ -932,7 +963,24 @@ const MyRequestsView: React.FC<MyRequestsViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] space-y-2.5">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            setSubTab('exit');
+            setStatusFilter((prev) => (prev === 'Pending' ? 'all' : 'Pending'));
+            setTimeout(() => ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setSubTab('exit');
+              setStatusFilter((prev) => (prev === 'Pending' ? 'all' : 'Pending'));
+              setTimeout(() => ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+            }
+          }}
+          className={`${getVividCardClass(2, { isActive: activeSubTab === 'exit' && statusFilter === 'Pending' })} p-5 rounded-xl space-y-2.5`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'myRequestsTotalCount')}</span>
             <ClipboardList size={17} className="text-[var(--primary-text)]" />
@@ -952,7 +1000,20 @@ const MyRequestsView: React.FC<MyRequestsViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-[var(--card-bg)] p-5 rounded-xl border border-[var(--border)] space-y-2.5">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            coveragesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              coveragesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }}
+          className={`${getVividCardClass(9)} p-5 rounded-xl space-y-2.5`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-[var(--text-muted)]">{t(lang, 'myRequestsSubDuty')}</span>
             <UserCheck size={17} className="text-[var(--primary-text)]" />
@@ -1465,7 +1526,7 @@ const MyRequestsView: React.FC<MyRequestsViewProps> = ({
 
       {/* Band 3 (Exit & Admin Sub-Tab): Unified Requests Ledger */}
       {activeSubTab === 'exit' && (
-      <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <section ref={ledgerRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
         <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="font-display text-base font-bold text-[var(--text-main)]">
@@ -1615,7 +1676,7 @@ const MyRequestsView: React.FC<MyRequestsViewProps> = ({
       )}
 
       {/* Band 4: My Assigned Substitute Coverages */}
-      <section className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+      <section ref={coveragesRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
         <div className="px-6 py-4 border-b border-[var(--border)] bg-[var(--surface-subtle)] flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Clock size={16} className="text-[var(--primary-text)]" />

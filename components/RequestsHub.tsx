@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Calendar,
   CalendarDays,
   CheckCircle2,
+  Clock,
   DoorOpen,
+  Download,
   Edit,
   FileText,
   Plus,
@@ -17,6 +20,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { getVividCardClass } from '../utils/cardColors';
 import {
   AppUser,
   Employee,
@@ -151,6 +155,10 @@ const RequestsHub: React.FC<RequestsHubProps> = ({
   }, [initialSubTab, onClearInitialSubTab, onChangeSubTab]);
 
   const canManage = currentUser?.permissions.includes('manage_vacations') ?? false;
+  const canExportExcel =
+    currentUser?.role === 'SuperAdmin' || Boolean(currentUser?.permissions.includes('export_excel'));
+  const hrTableRef = useRef<HTMLDivElement | null>(null);
+  const exitTableRef = useRef<HTMLDivElement | null>(null);
   const brandingOrgName =
     lang === 'ar'
       ? settings.branding?.orgNameAr || t(lang, 'brandTitle')
@@ -218,6 +226,31 @@ const RequestsHub: React.FC<RequestsHubProps> = ({
       })
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [exitPermissions, exitFilter, exitSearch]);
+
+  const handleExportExitPermits = () => {
+    const rows = filteredExits.map((ex) => {
+      const emp = employees.find((e) => e.id === ex.employeeId);
+      const monthUsage = getEmployeeMonthlyExitUsage(ex.employeeId, ex.date, exitPermissions);
+      return {
+        [lang === 'ar' ? 'الموظف' : 'Employee']: ex.employeeName,
+        [lang === 'ar' ? 'الرقم الإداري' : 'Admin ID']: emp?.adminId || '',
+        [lang === 'ar' ? 'القسم' : 'Department']: emp?.department || '',
+        [lang === 'ar' ? 'التاريخ' : 'Date']: ex.date,
+        [lang === 'ar' ? 'نوع السبب' : 'Reason Type']: ex.reasonType,
+        [lang === 'ar' ? 'وقت الخروج' : 'Exit Time']: ex.exitTime,
+        [lang === 'ar' ? 'وقت العودة' : 'Return Time']: ex.returnTime,
+        [lang === 'ar' ? 'المدة (دقيقة)' : 'Duration (min)']: ex.durationMinutes,
+        [lang === 'ar' ? 'الاستهلاك الشهري (دقيقة)' : 'Monthly Used (min)']: monthUsage.usedMinutes,
+        [lang === 'ar' ? 'الحالة' : 'Status']: ex.status,
+        [lang === 'ar' ? 'ملاحظات' : 'Notes']: ex.notes || '',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'ExitPermits');
+    XLSX.writeFile(wb, `exit_permits_${getTodayStr()}.xlsx`);
+    onToast('success', lang === 'ar' ? 'تم تصدير كشف أذون الخروج بنجاح.' : 'Exit permits exported.');
+  };
 
   const handleSaveHrRequest = (e: React.FormEvent) => {
     e.preventDefault();
@@ -562,6 +595,43 @@ const RequestsHub: React.FC<RequestsHubProps> = ({
             )}
           </div>
 
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { id: 'all' as const, label: statusFilterLabels.all, count: employeeRequests.length, paletteIdx: 0, textCls: 'text-cyan-400', badgeCls: 'bg-cyan-500/15 text-cyan-400', Icon: FileText },
+              { id: 'Pending' as const, label: statusFilterLabels.Pending, count: employeeRequests.filter((r) => r.status === 'Pending').length, paletteIdx: 2, textCls: 'text-amber-400', badgeCls: 'bg-amber-500/15 text-amber-400', Icon: Clock },
+              { id: 'Approved' as const, label: statusFilterLabels.Approved, count: employeeRequests.filter((r) => r.status === 'Approved').length, paletteIdx: 1, textCls: 'text-emerald-400', badgeCls: 'bg-emerald-500/15 text-emerald-400', Icon: CheckCircle2 },
+              { id: 'Returned' as const, label: statusFilterLabels.Returned, count: employeeRequests.filter((r) => r.status === 'Returned').length, paletteIdx: 9, textCls: 'text-fuchsia-400', badgeCls: 'bg-fuchsia-500/15 text-fuchsia-400', Icon: RotateCcw },
+            ].map((kpi) => (
+              <div
+                key={kpi.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setReqFilter(kpi.id === 'all' ? 'all' : reqFilter === kpi.id ? 'all' : kpi.id);
+                  hrTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setReqFilter(kpi.id === 'all' ? 'all' : reqFilter === kpi.id ? 'all' : kpi.id);
+                    hrTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  }
+                }}
+                className={`${getVividCardClass(kpi.paletteIdx, { isActive: reqFilter === kpi.id })} p-4 rounded-xl flex items-center justify-between gap-2`}
+              >
+                <div>
+                  <div className="text-xs text-[var(--text-muted)]">{kpi.label}</div>
+                  <div className={`font-display text-2xl font-bold font-mono-tabular mt-0.5 ${kpi.textCls}`}>
+                    {kpi.count}
+                  </div>
+                </div>
+                <div className={`p-2 rounded-lg ${kpi.badgeCls}`}>
+                  <kpi.Icon size={18} />
+                </div>
+              </div>
+            ))}
+          </div>
+
           <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex flex-wrap p-1 rounded-lg bg-[var(--surface-subtle)] gap-1">
               {(['all', 'Pending', 'Approved', 'Returned', 'Rejected'] as const).map((st) => {
@@ -599,7 +669,7 @@ const RequestsHub: React.FC<RequestsHubProps> = ({
             </div>
           </div>
 
-          <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+          <div ref={hrTableRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-start">
                 <thead className="bg-[var(--surface-subtle)] border-b border-[var(--border)] text-xs text-[var(--text-muted)]">
@@ -739,26 +809,75 @@ const RequestsHub: React.FC<RequestsHubProps> = ({
               <h3 className="font-display text-base font-bold">{t(lang, 'exitPermitsTitle')}</h3>
               <p className="text-xs text-[var(--text-muted)]">{t(lang, 'exitPermitsDesc')}</p>
             </div>
-            {canManage && (
-              <button
-                type="button"
+            <div className="flex flex-wrap items-center gap-2">
+              {canExportExcel && (
+                <button
+                  type="button"
+                  onClick={handleExportExitPermits}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[var(--border)] bg-[var(--card-bg)] text-xs font-medium text-[var(--text-main)] hover:bg-[var(--surface-subtle)] cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Download size={14} />
+                  <span>{t(lang, 'exportExcel')}</span>
+                </button>
+              )}
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExitModalError('');
+                    setEditingExit({
+                      employeeId: '',
+                      date: getTodayStr(),
+                      exitTime: '10:00',
+                      returnTime: '12:00',
+                      reasonType: 'مهمة عمل ميدانية',
+                      notes: '',
+                    });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Plus size={15} />
+                  <span>{t(lang, 'newExitPermit')}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { id: 'all' as const, label: statusFilterLabels.all, count: exitPermissions.length, paletteIdx: 0, textCls: 'text-cyan-400', badgeCls: 'bg-cyan-500/15 text-cyan-400', Icon: DoorOpen },
+              { id: 'Pending' as const, label: statusFilterLabels.Pending, count: exitPermissions.filter((x) => x.status === 'Pending').length, paletteIdx: 2, textCls: 'text-amber-400', badgeCls: 'bg-amber-500/15 text-amber-400', Icon: Clock },
+              { id: 'Approved' as const, label: statusFilterLabels.Approved, count: exitPermissions.filter((x) => x.status === 'Approved').length, paletteIdx: 1, textCls: 'text-emerald-400', badgeCls: 'bg-emerald-500/15 text-emerald-400', Icon: CheckCircle2 },
+              { id: 'Rejected' as const, label: statusFilterLabels.Rejected, count: exitPermissions.filter((x) => x.status === 'Rejected').length, paletteIdx: 3, textCls: 'text-rose-400', badgeCls: 'bg-rose-500/15 text-rose-400', Icon: XCircle },
+            ].map((kpi) => (
+              <div
+                key={kpi.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => {
-                  setExitModalError('');
-                  setEditingExit({
-                    employeeId: '',
-                    date: getTodayStr(),
-                    exitTime: '10:00',
-                    returnTime: '12:00',
-                    reasonType: 'مهمة عمل ميدانية',
-                    notes: '',
-                  });
+                  setExitFilter(kpi.id === 'all' ? 'all' : exitFilter === kpi.id ? 'all' : kpi.id);
+                  exitTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-fg)] text-xs font-semibold hover:bg-[var(--primary-hover)] cursor-pointer whitespace-nowrap shrink-0"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setExitFilter(kpi.id === 'all' ? 'all' : exitFilter === kpi.id ? 'all' : kpi.id);
+                    exitTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  }
+                }}
+                className={`${getVividCardClass(kpi.paletteIdx, { isActive: exitFilter === kpi.id })} p-4 rounded-xl flex items-center justify-between gap-2`}
               >
-                <Plus size={15} />
-                <span>{t(lang, 'newExitPermit')}</span>
-              </button>
-            )}
+                <div>
+                  <div className="text-xs text-[var(--text-muted)]">{kpi.label}</div>
+                  <div className={`font-display text-2xl font-bold font-mono-tabular mt-0.5 ${kpi.textCls}`}>
+                    {kpi.count}
+                  </div>
+                </div>
+                <div className={`p-2 rounded-lg ${kpi.badgeCls}`}>
+                  <kpi.Icon size={18} />
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
@@ -798,7 +917,7 @@ const RequestsHub: React.FC<RequestsHubProps> = ({
             </div>
           </div>
 
-          <div className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
+          <div ref={exitTableRef} className="bg-[var(--card-bg)] rounded-xl border border-[var(--border)] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-start">
                 <thead className="bg-[var(--surface-subtle)] border-b border-[var(--border)] text-xs text-[var(--text-muted)]">
